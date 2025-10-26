@@ -1,0 +1,1 @@
+[PC Lab Booking] {{ notification.verb|capfirst }}

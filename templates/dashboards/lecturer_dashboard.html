@@ -1,0 +1,10 @@
+{% extends 'layouts/base.html' %}
+{% block title %}Lecturer Dashboard{% endblock %}
+{% block content %}
+<h2>Lecturer Dashboard</h2>
+<p>Manage class bookings and recurring reservations.</p>
+<ul>
+  <li><a href="{% url 'booking_create' %}">Create class booking</a></li>
+  <li><a href="{% url 'booking_list' %}">My bookings</a></li>
+</ul>
+{% endblock %}

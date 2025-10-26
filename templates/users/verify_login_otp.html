@@ -1,0 +1,16 @@
+{% extends 'layouts/base.html' %}
+{% block title %}Verify Login{% endblock %}
+{% block content %}
+<div class="container mt-5">
+  <h3>Enter OTP</h3>
+  <p>We sent a 6-digit code to your email. It expires in 5 minutes.</p>
+  <form method="POST">
+    {% csrf_token %}
+    <div class="mb-3">
+      <label>OTP Code</label>
+      <input type="text" name="otp_code" class="form-control" placeholder="123456" maxlength="6" required>
+    </div>
+    <button type="submit" class="btn btn-primary w-100">Verify & Login</button>
+  </form>
+</div>
+{% endblock %}

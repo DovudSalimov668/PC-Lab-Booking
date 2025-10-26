@@ -1,0 +1,10 @@
+Hello {{ user.username }},
+
+{{ notification.actor.username if notification.actor else "System" }} {{ notification.verb }}.
+
+{{ notification.description }}
+
+To view details, log in to your PC Lab Booking account.
+
+Regards,
+PC Lab Booking System

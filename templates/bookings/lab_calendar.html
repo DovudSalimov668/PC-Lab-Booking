@@ -1,0 +1,1016 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Lab Availability Calendar{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+<style>
+  :root {
+    --primary: #6366f1;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    --card-bg: #ffffff;
+    --border-color: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+  }
+
+  body[data-theme="dark"] {
+    --card-bg: #0f172a;
+    --border-color: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    background: #020617;
+    color: #f8fafc;
+  }
+
+  body[data-theme="dark"] .fc-theme-standard td,
+  body[data-theme="dark"] .fc-theme-standard th {
+    border-color: #1e293b;
+  }
+
+  body[data-theme="dark"] .fc-daygrid-day {
+    background: #0f172a;
+  }
+
+  body[data-theme="dark"] .fc-toolbar-title,
+  body[data-theme="dark"] .fc-col-header-cell-cushion,
+  body[data-theme="dark"] .fc-daygrid-day-number {
+    color: #f8fafc;
+  }
+
+  /* Hero Section */
+  .page-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin-bottom: 2rem;
+    color: white;
+    box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+  }
+
+  .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+  }
+
+  .page-title {
+    font-size: 2.25rem;
+    font-weight: 900;
+    margin: 0 0 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .page-subtitle {
+    font-size: 1rem;
+    opacity: 0.95;
+    margin: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .dark-toggle {
+    width: 60px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+  }
+
+  .dark-toggle.active {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark-toggle::before {
+    content: '☀️';
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    background: white;
+    border-radius: 50%;
+    top: 1px;
+    left: 1px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+  }
+
+  .dark-toggle.active::before {
+    content: '🌙';
+    left: calc(100% - 27px);
+  }
+
+  /* Filters Panel */
+  .filters-panel {
+    background: var(--card-bg);
+    border-radius: 20px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    border: 2px solid var(--border-color);
+  }
+
+  .filters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .filter-label {
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .filter-select {
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .filter-select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  }
+
+  .filters-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 1rem;
+    background: rgba(102, 126, 234, 0.05);
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .legend-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .btn-reset {
+    padding: 0.75rem 1.5rem;
+    background: var(--border-color);
+    color: var(--text-secondary);
+    border: none;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-reset:hover {
+    background: #cbd5e1;
+    transform: translateY(-2px);
+  }
+
+  /* Stats Cards */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: var(--card-bg);
+    border-radius: 15px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    border: 2px solid var(--border-color);
+    transition: all 0.3s ease;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+  }
+
+  .stat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  /* Calendar Wrapper */
+  .calendar-wrapper {
+    background: var(--card-bg);
+    border-radius: 20px;
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    border: 2px solid var(--border-color);
+  }
+
+  /* FullCalendar Customization */
+  .fc {
+    font-family: inherit;
+  }
+
+  .fc .fc-toolbar-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+
+  .fc .fc-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 10px;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .fc .fc-button:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #63408b 100%);
+  }
+
+  .fc .fc-button-active {
+    background: linear-gradient(135deg, #4f46e5 0%, #581c87 100%);
+  }
+
+  .fc-event {
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 4px 6px;
+    border: none !important;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+  }
+
+  .fc-event:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  .fc-event-pending {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+    color: #92400e !important;
+  }
+
+  .fc-event-approved {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+    color: #065f46 !important;
+  }
+
+  .fc-event-rejected {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+    color: #991b1b !important;
+  }
+
+  .fc-event-completed {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+    color: #1e40af !important;
+  }
+
+  .fc-event-cancelled {
+    background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%) !important;
+    color: #374151 !important;
+  }
+
+  /* Modal */
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    justify-content: center;
+    align-items: center;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .modal.show {
+    display: flex;
+  }
+
+  .modal-content {
+    background: var(--card-bg);
+    padding: 0;
+    border-radius: 20px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(50px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1.5rem;
+    border-radius: 20px 20px 0 0;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .close-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+  }
+
+  .close-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg);
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .info-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .info-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(102, 126, 234, 0.05);
+    border-radius: 12px;
+    border-left: 4px solid #667eea;
+  }
+
+  .info-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .info-content {
+    flex: 1;
+  }
+
+  .info-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.5px;
+  }
+
+  .info-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .duration-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+  }
+
+  .status-pending {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+  }
+
+  .status-approved {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    color: #065f46;
+  }
+
+  .status-rejected {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+  }
+
+  .status-completed {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    color: #1e40af;
+  }
+
+  .status-cancelled {
+    background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+    color: #374151;
+  }
+
+  @media (max-width: 768px) {
+    .page-title {
+      font-size: 1.75rem;
+    }
+    .filters-grid {
+      grid-template-columns: 1fr;
+    }
+    .stats-row {
+      grid-template-columns: 1fr;
+    }
+    .legend {
+      justify-content: center;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="header-content">
+      <div>
+        <h1 class="page-title">
+          <i class="bi bi-calendar3"></i> Lab Availability Calendar
+        </h1>
+        <p class="page-subtitle">Real-time lab availability and booking management</p>
+      </div>
+      <div class="header-actions">
+        <div class="dark-toggle" id="darkToggle"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics Cards -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-header">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+          <i class="bi bi-calendar-range"></i>
+        </div>
+      </div>
+      <div class="stat-value" id="totalBookings">0</div>
+      <div class="stat-label">Total Bookings</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-header">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
+          <i class="bi bi-clock-history"></i>
+        </div>
+      </div>
+      <div class="stat-value" id="pendingCount">0</div>
+      <div class="stat-label">Pending</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-header">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+          <i class="bi bi-check-circle-fill"></i>
+        </div>
+      </div>
+      <div class="stat-value" id="approvedCount">0</div>
+      <div class="stat-label">Approved</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-header">
+        <div class="stat-icon" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white;">
+          <i class="bi bi-door-open"></i>
+        </div>
+      </div>
+      <div class="stat-value" id="availableLabs">{{ labs|length }}</div>
+      <div class="stat-label">Available Labs</div>
+    </div>
+  </div>
+
+  <!-- Filters Panel -->
+  <div class="filters-panel">
+    <div class="filters-grid">
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-building"></i> Campus
+        </label>
+        <select class="filter-select" id="campusFilter">
+          <option value="">All Campuses</option>
+          {% for c in campuses %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-door-open"></i> Lab
+        </label>
+        <select class="filter-select" id="labFilter">
+          <option value="">All Labs</option>
+          {% for l in labs %}
+          <option value="{{ l.id }}">{{ l.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-tag"></i> Status
+        </label>
+        <select class="filter-select" id="statusFilter">
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-calendar-range"></i> View
+        </label>
+        <select class="filter-select" id="viewSelector">
+          <option value="dayGridMonth">Month View</option>
+          <option value="timeGridWeek">Week View</option>
+          <option value="timeGridDay">Day View</option>
+          <option value="listWeek">List View</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="filters-actions">
+      <div class="legend">
+        <div class="legend-item">
+          <span class="legend-dot" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);"></span>
+          Pending
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);"></span>
+          Approved
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);"></span>
+          Rejected
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot" style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);"></span>
+          Completed
+        </div>
+      </div>
+      <button class="btn-reset" id="resetBtn">
+        <i class="bi bi-arrow-counterclockwise"></i> Reset Filters
+      </button>
+    </div>
+  </div>
+
+  <!-- Calendar -->
+  <div class="calendar-wrapper">
+    <div id="calendar"></div>
+  </div>
+
+  <!-- Booking Details Modal -->
+  <div id="bookingModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-info-circle-fill"></i> Booking Details
+        </h5>
+        <button class="close-btn" id="closeModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-building"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Lab Name</div>
+              <div class="info-value" id="modalLab"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-tag-fill"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Status</div>
+              <div id="modalStatus"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-calendar-check"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Start Time</div>
+              <div class="info-value" id="modalStart"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-calendar-x"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">End Time</div>
+              <div class="info-value" id="modalEnd"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-hourglass-split"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Duration</div>
+              <div id="modalDuration"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-person-fill"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Requester</div>
+              <div class="info-value" id="modalRequester"></div>
+            </div>
+          </div>
+
+          <div class="info-item">
+            <div class="info-icon">
+              <i class="bi bi-file-text"></i>
+            </div>
+            <div class="info-content">
+              <div class="info-label">Purpose</div>
+              <div class="info-value" id="modalPurpose"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const calendarEl = document.getElementById('calendar');
+    const modal = document.getElementById('bookingModal');
+    const closeModal = document.getElementById('closeModal');
+
+    // Filters
+    const campusFilter = document.getElementById('campusFilter');
+    const labFilter = document.getElementById('labFilter');
+    const statusFilter = document.getElementById('statusFilter');
+    const viewSelector = document.getElementById('viewSelector');
+    const resetBtn = document.getElementById('resetBtn');
+
+    // Dark Mode
+    const darkToggle = document.getElementById('darkToggle');
+    darkToggle.addEventListener('click', function() {
+        this.classList.toggle('active');
+        const theme = this.classList.contains('active') ? 'dark' : 'light';
+        document.body.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+    });
+
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        darkToggle.classList.add('active');
+        document.body.setAttribute('data-theme', 'dark');
+    }
+
+    // Initialize Calendar
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'timeGridWeek',
+        height: 'auto',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: ''
+        },
+        slotMinTime: '07:00:00',
+        slotMaxTime: '20:00:00',
+        allDaySlot: false,
+        nowIndicator: true,
+        selectable: true,
+        eventTimeFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            meridiem: 'short'
+        },
+        events: {
+            url: '{% url "lab_bookings_json" %}',
+            extraParams: function() {
+                return {
+                    campus: campusFilter.value,
+                    lab_id: labFilter.value,
+                    status: statusFilter.value
+                };
+            },
+            failure: function() {
+                alert('Failed to load bookings');
+            }
+        },
+        eventClick: function(info) {
+            const event = info.event;
+            const props = event.extendedProps;
+            
+            // Calculate duration
+            const start = event.start;
+            const end = event.end;
+            const duration = calculateDuration(start, end);
+
+            // Fill modal
+            document.getElementById('modalLab').textContent = props.lab || 'N/A';
+            document.getElementById('modalStart').textContent = formatDateTime(start);
+            document.getElementById('modalEnd').textContent = formatDateTime(end);
+            document.getElementById('modalRequester').textContent = props.requester || 'Unknown';
+            document.getElementById('modalPurpose').textContent = props.purpose || '—';
+
+            // Status badge
+            const statusHtml = `<span class="status-badge status-${props.status}">${props.status}</span>`;
+            document.getElementById('modalStatus').innerHTML = statusHtml;
+
+            // Duration badge
+            const durationHtml = `<span class="duration-badge"><i class="bi bi-clock-fill"></i> ${duration}</span>`;
+            document.getElementById('modalDuration').innerHTML = durationHtml;
+
+            modal.classList.add('show');
+        },
+        eventDidMount: function(info) {
+            const status = info.event.extendedProps.status;
+            info.el.classList.add(`fc-event-${status}`);
+
+            // Add duration to event title
+            const start = info.event.start;
+            const end = info.event.end;
+            const duration = calculateDuration(start, end);
+            
+            const titleEl = info.el.querySelector('.fc-event-title');
+            if (titleEl) {
+                titleEl.innerHTML += `<br><small style="opacity: 0.8;">${duration}</small>`;
+            }
+        },
+        eventContent: function(arg) {
+            const duration = calculateDuration(arg.event.start, arg.event.end);
+            return {
+                html: `<div style="padding: 2px;">
+                    <div style="font-weight: 700;">${arg.event.title}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.9;">${duration}</div>
+                </div>`
+            };
+        }
+    });
+
+    calendar.render();
+
+    // Update stats whenever events are loaded
+    calendar.on('eventsSet', function(events) {
+        updateStats(events);
+    });
+
+    // Filter change handlers
+    [campusFilter, labFilter, statusFilter].forEach(filter => {
+        filter.addEventListener('change', () => {
+            calendar.refetchEvents();
+        });
+    });
+
+    // View selector
+    viewSelector.addEventListener('change', function() {
+        calendar.changeView(this.value);
+    });
+
+    // Reset filters
+    resetBtn.addEventListener('click', function() {
+        campusFilter.value = '';
+        labFilter.value = '';
+        statusFilter.value = '';
+        viewSelector.value = 'timeGridWeek';
+        calendar.changeView('timeGridWeek');
+        calendar.refetchEvents();
+    });
+
+    // Close modal
+    closeModal.addEventListener('click', () => {
+        modal.classList.remove('show');
+    });
+
+    window.addEventListener('click', (e) => {
+        if (e.target == modal) {
+            modal.classList.remove('show');
+        }
+    });
+
+    // Helper functions
+    function calculateDuration(start, end) {
+        const diff = end - start;
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (hours === 0) {
+            return `${minutes}m`;
+        } else if (minutes === 0) {
+            return `${hours}h`;
+        } else {
+            return `${hours}h ${minutes}m`;
+        }
+    }
+
+    function formatDateTime(date) {
+        return date.toLocaleString('en-US', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function updateStats(events) {
+        let total = 0;
+        let pending = 0;
+        let approved = 0;
+        let rejected = 0;
+        let completed = 0;
+        let cancelled = 0;
+
+        events.forEach(event => {
+            const status = event.extendedProps?.status;
+            total++;
+            
+            if (status === 'pending') pending++;
+            else if (status === 'approved') approved++;
+            else if (status === 'rejected') rejected++;
+            else if (status === 'completed') completed++;
+            else if (status === 'cancelled') cancelled++;
+        });
+
+        document.getElementById('totalBookings').textContent = total;
+        document.getElementById('pendingCount').textContent = pending;
+        document.getElementById('approvedCount').textContent = approved;
+
+        // Update legend counts
+        const legendItems = {
+            'pending': pending,
+            'approved': approved,
+            'rejected': rejected,
+            'completed': completed,
+            'cancelled': cancelled
+        };
+
+        document.querySelectorAll('.legend-item').forEach((item, index) => {
+            const statuses = ['pending', 'approved', 'rejected', 'completed'];
+            if (index < statuses.length) {
+                const badge = document.createElement('span');
+                badge.className = 'legend-count';
+                badge.textContent = legendItems[statuses[index]];
+                
+                // Remove existing count if any
+                const existingBadge = item.querySelector('.legend-count');
+                if (existingBadge) {
+                    existingBadge.remove();
+                }
+                
+                item.appendChild(badge);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

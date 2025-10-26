@@ -1,0 +1,34 @@
+{% extends 'layouts/base.html' %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="fw-bold text-primary mb-4">Notifications</h2>
+
+  {% if notifications %}
+    {% for note in notifications %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <h5 class="fw-semibold">{{ note.title }}</h5>
+          <p class="text-muted mb-1">{{ note.message }}</p>
+          {% if note.link %}
+            <a href="{{ note.link }}" class="small text-decoration-none text-primary">View related item</a>
+          {% endif %}
+          <div class="d-flex justify-content-between mt-2">
+            <small class="text-secondary">{{ note.created_at|timesince }} ago</small>
+            {% if not note.is_read %}
+              <form method="post" action="{% url 'notifications:mark_read' %}">
+                {% csrf_token %}
+                <input type="hidden" name="id" value="{{ note.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-success">Mark as read</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-info text-center">
+      You have no notifications yet.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,153 @@
+<!-- templates/bookings/booking_form_enhanced.html -->
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create Booking{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <h1 class="text-3xl font-bold mb-6">Create New Booking</h1>
+    
+    <form method="post" class="bg-white shadow-md rounded px-8 pt-6 pb-8">
+        {% csrf_token %}
+        
+        {% if form.errors %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            <strong>Please correct the following errors:</strong>
+            <ul class="list-disc list-inside mt-2">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                        <li>{{ field }}: {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        
+        <!-- Basic Fields -->
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">
+                {{ form.lab.label }}
+            </label>
+            {{ form.lab }}
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    {{ form.start.label }}
+                </label>
+                {{ form.start }}
+            </div>
+            <div>
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    {{ form.end.label }}
+                </label>
+                {{ form.end }}
+            </div>
+        </div>
+        
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">
+                {{ form.purpose.label }}
+            </label>
+            {{ form.purpose }}
+        </div>
+        
+        <!-- Recurring Options (Only for Lecturers/Admins) -->
+        {% if user.can_create_recurring %}
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded">
+            <h3 class="text-lg font-semibold mb-3">Recurring Booking Options</h3>
+            
+            <div class="mb-3">
+                <label class="flex items-center">
+                    {{ form.create_recurring }}
+                    <span class="ml-2">{{ form.create_recurring.label }}</span>
+                </label>
+                <p class="text-sm text-gray-600 mt-1">{{ form.create_recurring.help_text }}</p>
+            </div>
+            
+            <div id="recurring-options" class="hidden">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">
+                            {{ form.recurrence_frequency.label }}
+                        </label>
+                        {{ form.recurrence_frequency }}
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">
+                            {{ form.recurrence_end_date.label }}
+                        </label>
+                        {{ form.recurrence_end_date }}
+                        <p class="text-sm text-gray-600 mt-1">{{ form.recurrence_end_date.help_text }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Policy Exception Request -->
+        <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
+            <h3 class="text-lg font-semibold mb-3">Policy Exception</h3>
+            
+            <div class="mb-3">
+                <label class="flex items-center">
+                    {{ form.request_exception }}
+                    <span class="ml-2">{{ form.request_exception.label }}</span>
+                </label>
+                <p class="text-sm text-gray-600 mt-1">{{ form.request_exception.help_text }}</p>
+            </div>
+            
+            <div id="exception-reason" class="hidden">
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    {{ form.exception_reason.label }}
+                </label>
+                {{ form.exception_reason }}
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="flex items-center justify-between">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded">
+                Create Booking
+            </button>
+            <a href="{% url 'booking_list' %}" class="text-gray-600 hover:text-gray-800">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Show/hide recurring options
+    const createRecurringCheckbox = document.querySelector('input[name="create_recurring"]');
+    const recurringOptions = document.getElementById('recurring-options');
+    
+    if (createRecurringCheckbox) {
+        createRecurringCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                recurringOptions.classList.remove('hidden');
+            } else {
+                recurringOptions.classList.add('hidden');
+            }
+        });
+    }
+    
+    // Show/hide exception reason
+    const requestExceptionCheckbox = document.querySelector('input[name="request_exception"]');
+    const exceptionReason = document.getElementById('exception-reason');
+    
+    if (requestExceptionCheckbox) {
+        requestExceptionCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                exceptionReason.classList.remove('hidden');
+            } else {
+                exceptionReason.classList.add('hidden');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

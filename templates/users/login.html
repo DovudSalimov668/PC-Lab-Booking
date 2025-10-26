@@ -1,0 +1,109 @@
+<!-- templates/users/login.html -->
+{% extends 'base.html' %} <!-- Assuming you have a base template -->
+{% block content %}
+
+<div class="d-flex justify-content-center align-items-center vh-100 bg-light">
+  <div class="card shadow-lg border-0" style="width: 400px; border-radius: 1rem;">
+    <div class="card-body p-4">
+      <h3 class="text-center mb-4 fw-bold text-primary">
+        <i class="bi bi-shield-lock-fill me-2"></i> Welcome Back
+      </h3>
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      <form method="post" action="{% url 'login' %}" class="needs-validation" novalidate>
+        {% csrf_token %}
+        
+        <div class="mb-3">
+          <label for="email" class="form-label fw-semibold">Email Address</label>
+          <div class="input-group has-validation">
+            <span class="input-group-text bg-light"><i class="bi bi-envelope-fill"></i></span>
+            <input id="email" name="email" type="email" class="form-control" 
+                   placeholder="example@domain.com" required autofocus
+                   pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$">
+            <div class="invalid-feedback">Please enter a valid email address.</div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="d-flex justify-content-between">
+            <label for="password" class="form-label fw-semibold">Password</label>
+            {% comment %} <a href="{% url 'password_reset' %}" class="text-decoration-none small">Forgot Password?</a> {% endcomment %}
+          </div>
+          <div class="input-group has-validation">
+            <span class="input-group-text bg-light"><i class="bi bi-lock-fill"></i></span>
+            <input id="password" name="password" type="password" class="form-control" 
+                   placeholder="Enter your password" required minlength="8">
+            <button type="button" class="btn btn-outline-secondary" id="togglePassword"
+                    aria-label="Toggle password visibility">
+              <i class="bi bi-eye"></i>
+            </button>
+            <div class="invalid-feedback">Password is required (minimum 8 characters).</div>
+          </div>
+        </div>
+
+        <div class="mb-3 form-check">
+          <input type="checkbox" class="form-check-input" id="remember" name="remember">
+          <label class="form-check-label" for="remember">Remember me</label>
+        </div>
+
+        <div class="d-grid mt-4">
+          <button type="submit" class="btn btn-primary btn-lg fw-semibold">
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span class="btn-text">Sign In</span>
+          </button>
+        </div>
+      </form>
+
+      <hr class="my-4">
+      <div class="text-center">
+        <small class="text-muted">
+          Don't have an account? <a href="{% url 'register' %}" class="text-decoration-none">Register</a>
+        </small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Password toggle
+document.getElementById('togglePassword').addEventListener('click', function() {
+  const passwordField = document.getElementById('password');
+  const icon = this.querySelector('i');
+  const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+  passwordField.setAttribute('type', type);
+  icon.classList.toggle('bi-eye');
+  icon.classList.toggle('bi-eye-slash');
+});
+
+// Form validation
+(function () {
+  'use strict'
+  const forms = document.querySelectorAll('.needs-validation')
+  Array.from(forms).forEach(form => {
+    form.addEventListener('submit', event => {
+      if (!form.checkValidity()) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        const button = form.querySelector('button[type="submit"]');
+        const spinner = button.querySelector('.spinner-border');
+        const btnText = button.querySelector('.btn-text');
+        spinner.classList.remove('d-none');
+        btnText.textContent = 'Signing in...';
+        button.disabled = true;
+      }
+      form.classList.add('was-validated');
+    }, false)
+  })
+})()
+</script>
+
+{% endblock %}

@@ -1,0 +1,245 @@
+<!-- templates/bookings/utilization_dashboard.html -->
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Utilization Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Lab Utilization Dashboard</h1>
+        <div class="flex space-x-2">
+            <select id="days-filter" class="border rounded px-3 py-2" onchange="changeDateRange()">
+                <option value="7" {% if days_back == 7 %}selected{% endif %}>Last 7 Days</option>
+                <option value="30" {% if days_back == 30 %}selected{% endif %}>Last 30 Days</option>
+                <option value="90" {% if days_back == 90 %}selected{% endif %}>Last 90 Days</option>
+                <option value="365" {% if days_back == 365 %}selected{% endif %}>Last Year</option>
+            </select>
+            <a href="{% url 'export_bookings_csv' %}?days={{ days_back }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                Export CSV
+            </a>
+        </div>
+    </div>
+    
+    <!-- Summary Statistics -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white p-6 rounded-lg shadow">
+            <div class="text-gray-500 text-sm">Total Bookings</div>
+            <div class="text-3xl font-bold text-gray-800">{{ total_bookings }}</div>
+            <div class="text-sm text-gray-500 mt-1">Last {{ days_back }} days</div>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+            <div class="text-gray-500 text-sm">Approved</div>
+            <div class="text-3xl font-bold text-green-600">{{ approved_bookings }}</div>
+            <div class="text-sm text-gray-500 mt-1">{{ approval_rate }}% approval rate</div>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+            <div class="text-gray-500 text-sm">Pending</div>
+            <div class="text-3xl font-bold text-yellow-600">{{ pending_bookings }}</div>
+            <div class="text-sm text-gray-500 mt-1">Awaiting approval</div>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+            <div class="text-gray-500 text-sm">Avg Duration</div>
+            <div class="text-3xl font-bold text-blue-600">{{ avg_duration }}</div>
+            <div class="text-sm text-gray-500 mt-1">minutes per booking</div>
+        </div>
+    </div>
+    
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- Bookings Over Time -->
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">Bookings Over Time</h2>
+            <canvas id="bookingsOverTimeChart"></canvas>
+        </div>
+        
+        <!-- Status Distribution -->
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">Booking Status</h2>
+            <canvas id="statusChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- Lab Utilization Table -->
+    <div class="bg-white shadow rounded-lg overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b">
+            <h2 class="text-xl font-semibold">Lab Utilization</h2>
+        </div>
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lab</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bookings</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Hours</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilization</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for stat in lab_stats %}
+                <tr>
+                    <td class="px-6 py-4">
+                        <div class="text-sm font-medium text-gray-900">{{ stat.lab.name }}</div>
+                        <div class="text-sm text-gray-500">{{ stat.lab.building }} - Room {{ stat.lab.room_number }}</div>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ stat.booking_count }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ stat.total_hours }}h</td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center">
+                            <div class="w-full bg-gray-200 rounded-full h-2 mr-2">
+                                <div class="bg-blue-600 h-2 rounded-full" style="width: {{ stat.utilization }}%"></div>
+                            </div>
+                            <span class="text-sm text-gray-900">{{ stat.utilization }}%</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        {% if stat.utilization >= 80 %}
+                        <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">High</span>
+                        {% elif stat.utilization >= 50 %}
+                        <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">Medium</span>
+                        {% else %}
+                        <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Low</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Top Requesters -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">Top Requesters</h2>
+            <div class="space-y-3">
+                {% for requester in top_requesters %}
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="font-medium">{{ requester.requester__username }}</div>
+                        <div class="text-sm text-gray-500">{{ requester.requester__role|title }}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-semibold">{{ requester.count }}</div>
+                        <div class="text-sm text-gray-500">bookings</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Peak Hours -->
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">Peak Booking Hours</h2>
+            <canvas id="peakHoursChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+function changeDateRange() {
+    const days = document.getElementById('days-filter').value;
+    window.location.href = `?days=${days}`;
+}
+
+// Bookings Over Time Chart
+const bookingsOverTimeCtx = document.getElementById('bookingsOverTimeChart').getContext('2d');
+new Chart(bookingsOverTimeCtx, {
+    type: 'line',
+    data: {
+        labels: {{ bookings_by_day|safe|map:'date'|list }},
+        datasets: [{
+            label: 'Bookings',
+            data: {{ bookings_by_day|safe|map:'count'|list }},
+            borderColor: 'rgb(59, 130, 246)',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        }
+    }
+});
+
+// Status Chart
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+new Chart(statusCtx, {
+    type: 'doughnut',
+    data: {
+        labels: {{ status_stats|safe|map:'status'|list }},
+        datasets: [{
+            data: {{ status_stats|safe|map:'count'|list }},
+            backgroundColor: [
+                'rgb(34, 197, 94)',   // approved - green
+                'rgb(250, 204, 21)',  // pending - yellow
+                'rgb(239, 68, 68)',   // rejected - red
+                'rgb(156, 163, 175)', // cancelled - gray
+                'rgb(59, 130, 246)'   // completed - blue
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// Peak Hours Chart
+const peakHoursCtx = document.getElementById('peakHoursChart').getContext('2d');
+new Chart(peakHoursCtx, {
+    type: 'bar',
+    data: {
+        labels: {{ peak_hours|safe|map:'hour'|list }},
+        datasets: [{
+            label: 'Bookings',
+            data: {{ peak_hours|safe|map:'count'|list }},
+            backgroundColor: 'rgba(59, 130, 246, 0.5)',
+            borderColor: 'rgb(59, 130, 246)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            },
+            x: {
+                title: {
+                    display: true,
+                    text: 'Hour of Day'
+                }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

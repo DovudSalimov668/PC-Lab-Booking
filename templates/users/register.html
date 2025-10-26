@@ -1,0 +1,235 @@
+{% extends 'layouts/base.html' %}
+{% load static %}
+
+{% block title %}Create Account{% endblock %}
+
+{% block extra_css %}
+<style>
+  body {
+    background: var(--bg-color, #f8fafc);
+    color: var(--text-color, #1e293b);
+    transition: background 0.4s ease, color 0.4s ease;
+  }
+  [data-theme="dark"] {
+    --bg-color: #0f172a;
+    --card-bg: #1e293b;
+    --text-color: #f8fafc;
+    --input-bg: #334155;
+    --border-color: #475569;
+  }
+  [data-theme="light"] {
+    --card-bg: #ffffff;
+    --input-bg: #f1f5f9;
+    --border-color: #cbd5e1;
+  }
+
+  .register-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+  }
+  .register-card {
+    background: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    padding: 2rem 3rem;
+    max-width: 500px;
+    width: 100%;
+    transition: all 0.3s ease;
+  }
+  .register-card:hover {
+    transform: translateY(-5px);
+  }
+
+  .register-card h2 {
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  form .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  input, select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1.5px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-color);
+    transition: all 0.3s ease;
+  }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: #fff;
+    border: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 700;
+    width: 100%;
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(99,102,241,0.4);
+  }
+
+  .messages .alert {
+    border-radius: 10px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 12px;
+    top: 38px;
+    cursor: pointer;
+    color: #94a3b8;
+  }
+
+  .dark-mode-toggle {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+  }
+  .toggle-switch {
+    width: 55px;
+    height: 28px;
+    background: var(--border-color);
+    border-radius: 20px;
+    position: relative;
+    cursor: pointer;
+  }
+  .toggle-switch::before {
+    content: '☀️';
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 22px;
+    height: 22px;
+    background: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+  }
+  [data-theme="dark"] .toggle-switch::before {
+    content: '🌙';
+    left: 30px;
+  }
+
+  .already-account {
+    text-align: center;
+    margin-top: 1.5rem;
+  }
+
+  .already-account a {
+    color: #6366f1;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .already-account a:hover {
+    text-decoration: underline;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="register-container">
+  <div class="register-card">
+    <div class="dark-mode-toggle">
+      <div class="toggle-switch" id="themeToggle"></div>
+    </div>
+
+    <h2><i class="bi bi-person-plus-fill"></i> Create Account</h2>
+
+    {% if messages %}
+    <div class="messages">
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="POST" novalidate>
+      {% csrf_token %}
+      {% for field in form %}
+      <div class="form-group position-relative">
+        <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
+        {% if field.field.widget.input_type == "password" %}
+          {{ field }}
+          <i class="bi bi-eye toggle-password" data-target="{{ field.id_for_label }}"></i>
+        {% else %}
+          {{ field }}
+        {% endif %}
+        {% if field.errors %}
+        <small class="text-danger">{{ field.errors.0 }}</small>
+        {% endif %}
+        {% if field.help_text %}
+        <small class="text-muted">{{ field.help_text|safe }}</small>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+      <div class="alert alert-danger">
+        {{ form.non_field_errors }}
+      </div>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary mt-3">Create Account</button>
+    </form>
+
+    <div class="already-account">
+      Already have an account? <a href="{% url 'login' %}">Sign in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Theme toggle
+  const toggle = document.getElementById("themeToggle");
+  const savedTheme = localStorage.getItem("theme") || "light";
+  document.body.dataset.theme = savedTheme;
+
+  toggle.addEventListener("click", () => {
+    const newTheme = document.body.dataset.theme === "dark" ? "light" : "dark";
+    document.body.dataset.theme = newTheme;
+    localStorage.setItem("theme", newTheme);
+  });
+
+  // Password visibility toggle
+  document.querySelectorAll(".toggle-password").forEach(icon => {
+    icon.addEventListener("click", () => {
+      const target = document.getElementById(icon.dataset.target);
+      const type = target.getAttribute("type") === "password" ? "text" : "password";
+      target.setAttribute("type", type);
+      icon.classList.toggle("bi-eye");
+      icon.classList.toggle("bi-eye-slash");
+    });
+  });
+</script>
+{% endblock %}

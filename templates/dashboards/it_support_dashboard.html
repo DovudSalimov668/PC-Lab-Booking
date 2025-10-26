@@ -1,0 +1,9 @@
+{% extends 'layouts/base.html' %}
+{% block title %}IT Support Dashboard{% endblock %}
+{% block content %}
+<h2>IT Support</h2>
+<p>User administration and system monitoring links.</p>
+<ul>
+  <li><a href="{% url 'admin:index' %}">Admin site</a></li>
+</ul>
+{% endblock %}

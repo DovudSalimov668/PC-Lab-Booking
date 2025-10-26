@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Labs{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-3"><i class="bi bi-building"></i> Computer Labs</h2>
+  <div class="list-group shadow-sm">
+    {% for lab in labs %}
+      <a class="list-group-item list-group-item-action">
+        <div class="d-flex w-100 justify-content-between">
+          <h5 class="mb-1">{{ lab.name }}</h5>
+            <h5 class="mb-1">{{ lab.campus }}</h5>
+          <small>Capacity: {{ lab.capacity }}</small>
+        </div>
+        {% if lab.location %}
+          <p class="mb-1 text-muted">Location: {{ lab.location }}</p>
+        {% endif %}
+      </a>
+    {% empty %}
+      <div class="alert alert-info">No labs found.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+

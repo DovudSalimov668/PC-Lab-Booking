@@ -1,0 +1,100 @@
+{% extends 'layouts/base.html' %}
+{% block title %}Verify OTP{% endblock %}
+{% block content %}
+<div class="container mt-5" style="max-width: 450px;">
+  <div class="card shadow p-4">
+    <h3 class="text-center mb-3">
+      {% if purpose == 'login' %}
+        🔐 Verify Login
+      {% else %}
+        ✉️ Verify Your Account
+      {% endif %}
+    </h3>
+
+    <p class="text-center text-muted">
+      An OTP has been sent to <strong>{{ email }}</strong>.
+      Please enter it below.
+    </p>
+
+    <form method="POST" id="verifyForm">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label for="otp_code" class="form-label fw-bold">Enter 6-digit OTP</label>
+        <input type="text" name="otp_code" maxlength="6" class="form-control text-center"
+               placeholder="123456" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 mt-2">Verify</button>
+    </form>
+
+    <div class="text-center mt-3">
+      <button id="resendBtn" class="btn btn-link text-decoration-none">Resend OTP</button>
+      <p id="resendTimer" class="text-muted small" style="display:none;"></p>
+    </div>
+
+    <div class="text-center mt-3">
+      <a href="{% url 'login' %}" class="text-secondary small">← Back to Login</a>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast"
+     style="position: fixed; bottom: 20px; right: 20px; display: none; background: #333; color: #fff;
+            padding: 10px 20px; border-radius: 8px; z-index: 999;">
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const resendBtn = document.getElementById('resendBtn');
+const resendTimer = document.getElementById('resendTimer');
+const toast = document.getElementById('toast');
+
+// Show a temporary toast message
+function showToast(message, success = true) {
+  toast.textContent = message;
+  toast.style.background = success ? "#10b981" : "#ef4444";
+  toast.style.display = "block";
+  setTimeout(() => toast.style.display = "none", 3000);
+}
+
+// Countdown timer for 30s before resend
+function startCooldown(seconds = 30) {
+  resendBtn.disabled = true;
+  resendTimer.style.display = "block";
+
+  const interval = setInterval(() => {
+    resendTimer.textContent = `You can resend in ${seconds}s...`;
+    seconds--;
+    if (seconds < 0) {
+      clearInterval(interval);
+      resendBtn.disabled = false;
+      resendTimer.style.display = "none";
+    }
+  }, 1000);
+}
+
+// Handle resend OTP click
+resendBtn.addEventListener('click', async () => {
+  startCooldown(); // prevent spam
+  try {
+    const response = await fetch("{% url 'resend_otp' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "Accept": "application/json"
+      },
+    });
+    const data = await response.json();
+    if (data.success) {
+      showToast(data.message, true);
+    } else {
+      showToast(data.error || "Something went wrong", false);
+    }
+  } catch {
+    showToast("Failed to resend OTP.", false);
+  }
+});
+</script>
+{% endblock %}
