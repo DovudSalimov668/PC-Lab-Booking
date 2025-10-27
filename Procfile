@@ -1,1 +1,1 @@
-web: gunicorn pc_lab_booking.wsgi --log-file -
+gunicorn config.wsgi --log-file -
