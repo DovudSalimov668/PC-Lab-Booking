@@ -31,15 +31,47 @@ urlpatterns = [
     # === JSON helpers ===
     path("labs/json/", views.get_lab_list_json, name="get_lab_list_json"),
     path("pending-for-lab/", views.pending_bookings_for_lab, name="pending_bookings_for_lab"),
+    # path("lab_availability_json/", views.lab_availability_json, name="lab_availability_json"),
+    
+    
+
 
     # === Quick approve/reject ===
     path("<int:pk>/quick-approve/", views.quick_approve_page, name="quick_approve_page"),
 
     # === Policy exceptions (optional) ===
     path("<int:booking_id>/request-exception/", views.PolicyExceptionRequestView.as_view(), name="request_policy_exception"),
-    path("exception/<int:pk>/review/", views.PolicyExceptionApprovalView.as_view(), name="policy_exception_review"),
+    path("exception/<int:pk>/review/", views.PolicyExceptionApprovalView.as_view(), name="policy_exception_review"),   
+    path("policy-exceptions/", views.PolicyExceptionListView.as_view(), name="policy_exception_list"),
+    
+    
+    
 
     # === Reports and analytics ===
     path("utilization/", views.UtilizationDashboardView.as_view(), name="utilization_dashboard"),
     path("export-csv/", views.export_bookings_csv, name="export_bookings_csv"),
+
+
+
+
+    # Add these URLs to bookings/urls.py
+
+
+
+
+
+    
+    # Policy Exception URLs
+    path("policy-exception/<int:booking_id>/request/", 
+         views.PolicyExceptionRequestView.as_view(), 
+         name="policy_exception_request"),
+    
+    path("policy-exception/<int:pk>/review/", 
+         views.PolicyExceptionApprovalView.as_view(), 
+         name="policy_exception_review"),
+    
+    path("policy-exceptions/", 
+         views.PolicyExceptionListView.as_view(), 
+         name="policy_exception_list"),
 ]
+

@@ -301,9 +301,146 @@ class LabTechnicianDashboardView(LoginRequiredMixin, LabTechnicianRequiredMixin,
 class ITSupportDashboardView(LoginRequiredMixin, ITSupportRequiredMixin, TemplateView):
     template_name = "dashboards/it_support_dashboard.html"
 
+# Replace or update the ManagerDashboardView in users/views.py
+
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import TemplateView
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Count, Avg, Sum
+from django.db.models.functions import TruncDate
+from .mixins import ManagerRequiredMixin
+
 class ManagerDashboardView(LoginRequiredMixin, ManagerRequiredMixin, TemplateView):
     template_name = "dashboards/manager_dashboard.html"
-
+    
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        
+        # Import here to avoid circular imports
+        from bookings.models import Booking, PolicyException
+        from labs.models import Lab
+        
+        # Date range for analytics (last 30 days by default)
+        days_back = int(self.request.GET.get("days", 30))
+        start_date = timezone.now() - timedelta(days=days_back)
+        
+        # ===== BOOKING STATISTICS =====
+        ctx["total_bookings"] = Booking.objects.count()
+        ctx["pending_bookings"] = Booking.objects.filter(status="pending").count()
+        ctx["approved_bookings"] = Booking.objects.filter(status="approved").count()
+        ctx["completed_bookings"] = Booking.objects.filter(status="completed").count()
+        ctx["rejected_bookings"] = Booking.objects.filter(status="rejected").count()
+        ctx["cancelled_bookings"] = Booking.objects.filter(status="cancelled").count()
+        
+        # Recent bookings (last 30 days)
+        ctx["recent_bookings"] = Booking.objects.filter(
+            created_at__gte=start_date
+        ).count()
+        
+        ctx["approved_today"] = Booking.objects.filter(
+            status="approved",
+            created_at__date=timezone.now().date()
+        ).count()
+        
+        # ===== POLICY EXCEPTION STATISTICS =====
+        ctx["pending_exceptions_count"] = PolicyException.objects.filter(status="pending").count()
+        ctx["total_exceptions"] = PolicyException.objects.count()
+        ctx["approved_exceptions"] = PolicyException.objects.filter(status="approved").count()
+        ctx["rejected_exceptions"] = PolicyException.objects.filter(status="rejected").count()
+        
+        # Recent pending exceptions (for quick view)
+        ctx["recent_exceptions"] = PolicyException.objects.filter(
+            status="pending"
+        ).select_related("booking", "booking__lab", "requested_by").order_by("-created_at")[:5]
+        
+        # ===== LAB UTILIZATION =====
+        labs = Lab.objects.all()
+        lab_stats = []
+        WORK_START_HOUR = 8
+        WORK_END_HOUR = 20
+        
+        for lab in labs:
+            bookings = Booking.objects.filter(
+                lab=lab, 
+                start__gte=start_date, 
+                status__in=["approved", "completed"]
+            )
+            
+            # Calculate total booked hours
+            total_seconds = 0.0
+            for b in bookings:
+                try:
+                    total_seconds += (b.end - b.start).total_seconds()
+                except Exception:
+                    pass
+            
+            total_hours = round(total_seconds / 3600.0, 2)
+            booking_count = bookings.count()
+            available_hours = (WORK_END_HOUR - WORK_START_HOUR) * days_back
+            utilization = round((total_hours / available_hours * 100) if available_hours > 0 else 0.0, 1)
+            
+            lab_stats.append({
+                "lab": lab,
+                "booking_count": booking_count,
+                "total_hours": total_hours,
+                "utilization": utilization
+            })
+        
+        # Sort by utilization (highest first)
+        lab_stats.sort(key=lambda x: x["utilization"], reverse=True)
+        ctx["lab_stats"] = lab_stats[:5]  # Top 5 labs
+        
+        # ===== BOOKING TRENDS =====
+        bookings_by_day = Booking.objects.filter(
+            start__gte=start_date
+        ).annotate(
+            date=TruncDate("start")
+        ).values("date").annotate(count=Count("id")).order_by("date")
+        
+        ctx["bookings_by_day"] = list(bookings_by_day)
+        
+        # ===== STATUS BREAKDOWN =====
+        status_stats = Booking.objects.filter(
+            created_at__gte=start_date
+        ).values("status").annotate(count=Count("id")).order_by("-count")
+        
+        ctx["status_stats"] = list(status_stats)
+        
+        # ===== TOP REQUESTERS =====
+        top_requesters = Booking.objects.filter(
+            created_at__gte=start_date
+        ).values(
+            "requester__username", 
+            "requester__email"
+        ).annotate(count=Count("id")).order_by("-count")[:5]
+        
+        ctx["top_requesters"] = list(top_requesters)
+        
+        # # ===== AVERAGE DURATION =====
+        # avg_duration = Booking.objects.filter(
+        #     created_at__gte=start_date
+        # ).aggregate(
+        #     avg_hours=Avg("duration_hours" if hasattr(Booking, "duration_hours") else None)
+        # )
+        
+        # ctx["avg_duration"] = avg_duration.get("avg_hours") if avg_duration else 0
+        
+        # ===== PEAK HOURS =====
+        peak_hours = Booking.objects.filter(
+            start__gte=start_date,
+            status__in=["approved", "completed"]
+        ).extra(
+            select={"hour": "EXTRACT(hour FROM start)"}
+        ).values("hour").annotate(count=Count("id")).order_by("-count")[:5]
+        
+        ctx["peak_hours"] = list(peak_hours)
+        
+        # ===== OTHER CONTEXT =====
+        ctx["days_back"] = days_back
+        ctx["start_date"] = start_date
+        
+        return ctx
 
 
 from django.contrib.auth import logout

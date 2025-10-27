@@ -1,114 +1,141 @@
-# bookings/services.py
-from django.db import transaction
+# notifications/services.py
+from django.core.mail import send_mail
+from django.conf import settings
+from django.template.loader import render_to_string
 from django.utils import timezone
-from datetime import timedelta
-from .models import Booking, RECURRENCE_FREQUENCY
-import logging
-
-logger = logging.getLogger(__name__)
+from threading import Thread
+from users.models import User
+from .models import Notification
 
 
-class RecurringBookingService:
-    """Service to handle recurring bookings"""
-    
+class NotificationService:
+    """Handles creation and email delivery of notifications."""
+
+    # -----------------------------
+    # 1️⃣ Base notification creator
+    # -----------------------------
     @staticmethod
-    def create_recurring_bookings(parent_booking, frequency, end_date):
+    def create_notification(
+        recipient=None,
+        title="",
+        message="",
+        link=None,
+        sender=None,
+        target_role=None,
+        notification_type="general",
+        send_email=True
+    ):
         """
-        Create recurring bookings based on parent booking
-        
-        Args:
-            parent_booking: The original booking
-            frequency: 'daily', 'weekly', 'biweekly', or 'monthly'
-            end_date: When to stop creating recurring bookings
-        
-        Returns:
-            List of created booking instances
+        Create a notification record and optionally send an email.
         """
-        created_bookings = []
-        
-        # Calculate interval
-        if frequency == 'daily':
-            delta = timedelta(days=1)
-        elif frequency == 'weekly':
-            delta = timedelta(weeks=1)
-        elif frequency == 'biweekly':
-            delta = timedelta(weeks=2)
-        elif frequency == 'monthly':
-            delta = timedelta(days=30)  # Approximate
-        else:
-            return []
-        
-        current_start = parent_booking.start + delta
-        current_end = parent_booking.end + delta
-        duration = parent_booking.end - parent_booking.start
-        
-        # Limit to prevent infinite loops
-        max_instances = 52  # Max 1 year of weekly bookings
-        instance_count = 0
-        
-        while current_start.date() <= end_date and instance_count < max_instances:
-            # Check if this slot is available
-            conflicts = Booking.objects.filter(
-                lab=parent_booking.lab,
-                start__lt=current_end,
-                end__gt=current_start
-            ).exclude(status__in=['cancelled', 'rejected'])
-            
-            if not conflicts.exists():
-                try:
-                    with transaction.atomic():
-                        recurring_booking = Booking.objects.create(
-                            requester=parent_booking.requester,
-                            lab=parent_booking.lab,
-                            start=current_start,
-                            end=current_end,
-                            purpose=parent_booking.purpose,
-                            status='approved' if parent_booking.status == 'approved' else 'pending',
-                            is_recurring=True,
-                            recurrence_frequency=frequency,
-                            parent_booking=parent_booking,
-                            admin_notes=f"Part of recurring series starting {parent_booking.start.date()}"
-                        )
-                        created_bookings.append(recurring_booking)
-                        logger.info(f"Created recurring booking #{recurring_booking.id}")
-                except Exception as e:
-                    logger.error(f"Failed to create recurring booking: {str(e)}")
-            else:
-                logger.warning(f"Skipped {current_start} - slot already booked")
-            
-            # Move to next occurrence
-            current_start += delta
-            current_end += delta
-            instance_count += 1
-        
-        return created_bookings
-    
-    @staticmethod
-    def cancel_recurring_series(parent_booking):
-        """Cancel all future instances of a recurring series"""
-        now = timezone.now()
-        future_instances = Booking.objects.filter(
-            parent_booking=parent_booking,
-            start__gte=now
-        ).exclude(status='cancelled')
-        
-        count = future_instances.update(status='cancelled')
-        logger.info(f"Cancelled {count} future instances of booking #{parent_booking.id}")
-        return count
-    
-    @staticmethod
-    def update_recurring_series(parent_booking, update_future=True, **update_fields):
-        """Update recurring series"""
-        if not update_future:
-            return 0
-        
-        now = timezone.now()
-        future_instances = Booking.objects.filter(
-            parent_booking=parent_booking,
-            start__gte=now,
-            status='pending'
+        notif = Notification.objects.create(
+            recipient=recipient,
+            sender=sender,
+            title=title,
+            message=message,
+            action_url=link,
+            target_role=target_role,
+            notification_type=notification_type,
+            created_at=timezone.now(),
+            is_read=False,
         )
-        
-        count = future_instances.update(**update_fields)
-        logger.info(f"Updated {count} future instances of booking #{parent_booking.id}")
-        return count
+
+        # Email sending
+        if send_email:
+            if recipient and recipient.email:
+                NotificationService._send_email_async(
+                    subject=f"[PC Lab Booking] {title}",
+                    message=message,
+                    recipient_list=[recipient.email],
+                )
+            elif target_role:
+                users = User.objects.filter(role=target_role, is_active=True)
+                for user in users:
+                    if user.email:
+                        NotificationService._send_email_async(
+                            subject=f"[PC Lab Booking] {title}",
+                            message=message,
+                            recipient_list=[user.email],
+                        )
+        return notif
+
+    # -----------------------------
+    # 2️⃣ Specific notification types
+    # -----------------------------
+    @staticmethod
+    def notify_booking_created(booking):
+        admins = User.objects.filter(role="program_admin", is_active=True)
+        for admin in admins:
+            NotificationService.create_notification(
+                recipient=admin,
+                title=f"New Booking Request: {booking.lab.name}",
+                message=(
+                    f"{booking.requester.username} requested to book {booking.lab.name} "
+                    f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."
+                ),
+                link=f"/bookings/{booking.id}/",
+                sender=booking.requester,
+                notification_type="booking_created",
+            )
+
+    @staticmethod
+    def notify_booking_approved(booking, approver):
+        NotificationService.create_notification(
+            recipient=booking.requester,
+            title=f"Booking Approved: {booking.lab.name}",
+            message=(
+                f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
+                f"has been approved by {approver.username}."
+            ),
+            link=f"/bookings/{booking.id}/",
+            sender=approver,
+            notification_type="booking_approved",
+        )
+
+    @staticmethod
+    def notify_booking_rejected(booking, approver):
+        NotificationService.create_notification(
+            recipient=booking.requester,
+            title=f"Booking Rejected: {booking.lab.name}",
+            message=(
+                f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
+                f"was rejected by {approver.username}."
+            ),
+            link=f"/bookings/{booking.id}/",
+            sender=approver,
+            notification_type="booking_rejected",
+        )
+
+    @staticmethod
+    def notify_booking_cancelled(booking, actor):
+        NotificationService.create_notification(
+            recipient=booking.requester,
+            title=f"Booking Cancelled: {booking.lab.name}",
+            message=(
+                f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
+                f"was cancelled by {actor.username}."
+            ),
+            link=f"/bookings/{booking.id}/",
+            sender=actor,
+            notification_type="booking_cancelled",
+        )
+
+    # -----------------------------
+    # 3️⃣ Async Email Helper
+    # -----------------------------
+    @staticmethod
+    def _send_email_async(subject, message, recipient_list):
+        """Send email in a background thread (non-blocking)."""
+        def _send():
+            try:
+                send_mail(
+                    subject,
+                    message,
+                    getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@pclab.com"),
+                    recipient_list,
+                    fail_silently=False,
+                )
+            except Exception as e:
+                print("[NotificationService] Email send error:", e)
+
+        Thread(target=_send, daemon=True).start()

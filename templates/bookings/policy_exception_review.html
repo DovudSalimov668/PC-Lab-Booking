@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Review Policy Exception - Booking #{{ booking.id }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url 'manager_dashboard' %}">Manager Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'policy_exception_list' %}">Policy Exceptions</a></li>
+      <li class="breadcrumb-item active">Review #{{ exception.id }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-shield-exclamation me-2"></i>Review Policy Exception</h2>
+    <span class="badge bg-{% if exception.status == 'pending' %}warning{% elif exception.status == 'approved' %}success{% else %}danger{% endif %} fs-6">
+      {{ exception.get_status_display|upper }}
+    </span>
+  </div>
+
+  <div class="row">
+    <!-- Exception Details -->
+    <div class="col-md-6">
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-danger text-white">
+          <h5 class="mb-0"><i class="bi bi-shield-exclamation me-2"></i>Exception Request Details</h5>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Exception ID:</strong>
+            <span class="badge bg-secondary fs-6">#{{ exception.id }}</span>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Current Status:</strong>
+            <span class="badge bg-{% if exception.status == 'pending' %}warning{% elif exception.status == 'approved' %}success{% else %}danger{% endif %} fs-6">
+              {{ exception.get_status_display|upper }}
+            </span>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Requested By:</strong>
+            <p class="mb-0">{{ exception.requested_by.get_full_name|default:exception.requested_by.username }}</p>
+            <small class="text-muted">{{ exception.requested_by.email }}</small>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Requested On:</strong>
+            <p class="mb-0">{{ exception.created_at|date:"F d, Y - g:i A" }}</p>
+            <small class="text-muted">{{ exception.created_at|timesince }} ago</small>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Reason for Exception:</strong>
+            <div class="alert alert-warning mt-2">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              {{ exception.reason }}
+            </div>
+          </div>
+          
+          {% if exception.reviewed_by %}
+          <hr>
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Reviewed By:</strong>
+            <p class="mb-0">{{ exception.reviewed_by.get_full_name|default:exception.reviewed_by.username }}</p>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Reviewed On:</strong>
+            <p class="mb-0">{{ exception.reviewed_at|date:"F d, Y - g:i A" }}</p>
+          </div>
+          {% endif %}
+          
+          {% if exception.review_notes %}
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Review Notes:</strong>
+            <div class="alert alert-info mt-2">
+              <i class="bi bi-chat-left-text me-2"></i>
+              {{ exception.review_notes }}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Booking Details -->
+    <div class="col-md-6">
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-calendar-event me-2"></i>Associated Booking</h5>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Booking ID:</strong>
+            <a href="{% url 'booking_detail' booking.id %}" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-eye me-1"></i>View Booking #{{ booking.id }}
+            </a>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Lab:</strong>
+            <p class="mb-0">{{ booking.lab.name }}</p>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Date:</strong>
+            <p class="mb-0">{{ booking.start|date:"l, F d, Y" }}</p>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Time:</strong>
+            <p class="mb-0">
+              <i class="bi bi-clock me-1"></i>
+              {{ booking.start|date:"g:i A" }} - {{ booking.end|date:"g:i A" }}
+            </p>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Duration:</strong>
+            <p class="mb-0">
+              <i class="bi bi-hourglass-split me-1"></i>
+              {{ booking.duration_hours }} hours
+            </p>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Purpose:</strong>
+            <div class="bg-light p-3 rounded mt-2">
+              {{ booking.purpose|default:"Not specified" }}
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <strong class="text-muted d-block mb-1">Current Booking Status:</strong>
+            <span class="badge bg-{% if booking.status == 'approved' %}success{% elif booking.status == 'pending' %}warning{% elif booking.status == 'rejected' %}danger{% elif booking.status == 'completed' %}info{% else %}secondary{% endif %} fs-6">
+              {{ booking.get_status_display|upper }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Decision Form (Only for Pending Exceptions) -->
+  {% if exception.status == 'pending' %}
+  <div class="card shadow-sm">
+    <div class="card-header bg-warning">
+      <h5 class="mb-0"><i class="bi bi-hand-thumbs-up me-2"></i>Make Your Decision</h5>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Important:</strong> Approving this exception will automatically approve the booking. Rejecting will reject the booking.
+      </div>
+      
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-4">
+          <label for="review_notes" class="form-label">
+            <strong>Review Notes</strong>
+            <span class="text-danger">*</span>
+          </label>
+          <textarea class="form-control" id="review_notes" name="review_notes" rows="4" 
+                    placeholder="Explain your decision to the requester..." required></textarea>
+          <small class="form-text text-muted">
+            These notes will be sent to {{ exception.requested_by.username }} and saved in the system.
+          </small>
+        </div>
+
+        <div class="d-flex gap-2 justify-content-between flex-wrap">
+          <div class="d-flex gap-2">
+            <button type="submit" name="action" value="approve" class="btn btn-success btn-lg">
+              <i class="bi bi-check-circle me-2"></i>Approve Exception & Booking
+            </button>
+            <button type="submit" name="action" value="reject" class="btn btn-danger btn-lg">
+              <i class="bi bi-x-circle me-2"></i>Reject Exception & Booking
+            </button>
+          </div>
+          <a href="{% url 'manager_dashboard' %}" class="btn btn-outline-secondary btn-lg">
+            <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <!-- Already Reviewed -->
+  <div class="card shadow-sm">
+    <div class="card-body text-center py-4">
+      <i class="bi bi-{% if exception.status == 'approved' %}check-circle text-success{% else %}x-circle text-danger{% endif %} display-1 mb-3"></i>
+      <h4>This exception has already been {{ exception.status }}</h4>
+      <p class="text-muted">No further action is required.</p>
+      <div class="d-flex gap-2 justify-content-center mt-4">
+        <a href="{% url 'manager_dashboard' %}" class="btn btn-primary">
+          <i class="bi bi-speedometer2 me-1"></i>Back to Dashboard
+        </a>
+        <a href="{% url 'policy_exception_list' %}" class="btn btn-outline-primary">
+          <i class="bi bi-list me-1"></i>All Exceptions
+        </a>
+        <a href="{% url 'booking_detail' booking.id %}" class="btn btn-outline-secondary">
+          <i class="bi bi-eye me-1"></i>View Booking
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

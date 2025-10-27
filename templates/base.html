@@ -786,6 +786,7 @@
                 justify-content: center;
             }
         }
+        
 
         @media (max-width: 768px) {
             .navbar-brand {
@@ -851,29 +852,47 @@
                     <i class="bi bi-calendar-week"></i> Calendar
                 </a>
                 </li>
+                
                 <li class="nav-item">
-                <li class="nav-item dropdown">
-                <a class="nav-link position-relative" href="#" id="notifDropdown" role="button" data-bs-toggle="dropdown">
-                    <i class="bi bi-bell-fill"></i>
-                    {% if unread_notifications_count %}
-                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                        {{ unread_notifications_count }}
-                    </span>
-                    {% endif %}
-                </a>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm p-0" aria-labelledby="notifDropdown" style="width:360px;">
-                    <li class="dropdown-header bg-light text-center py-2">Notifications</li>
-                    {% for n in notifications %}
-                    <a class="dropdown-item {% if not n.is_read %}fw-bold{% endif %}" href="#" data-id="{{ n.id }}">
-                        {{ n.verb|capfirst }} — {{ n.description|truncatechars:60 }}
-                    </a>
-                    {% empty %}
-                    <div class="dropdown-item text-center text-muted py-2">No notifications</div>
-                    {% endfor %}
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item text-center" href="{% url 'notifications:all' %}">View all</a></li>
-                </ul>
+             <li class="nav-item dropdown">
+            <a class="nav-link position-relative" href="#" id="notifDropdown" role="button" data-bs-toggle="dropdown">
+                <i class="bi bi-bell-fill"></i>
+                {% if unread_notifications_count %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                    {{ unread_notifications_count }}
+                </span>
+                {% endif %}
+            </a>
+
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm p-0" aria-labelledby="notifDropdown" style="width: 360px; max-height: 420px; overflow-y: auto;">
+                <li class="dropdown-header bg-light text-center py-2">
+                Notifications
+                <a href="#" id="markAllRead" class="small ms-2 text-decoration-none">Mark all as read</a>
                 </li>
+
+                {% for n in notifications %}
+                <li>
+                    <div class="dropdown-item d-block notif-item {% if not n.is_read %}fw-bold bg-light{% endif %}" data-id="{{ n.id }}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                        <div class="fw-semibold">{{ n.title }}</div>
+                        <div class="text-muted small">{{ n.message|truncatechars:70 }}</div>
+                        </div>
+                        <small class="text-secondary">{{ n.created_at|timesince }} ago</small>
+                    </div>
+                    {% if not n.is_read %}
+                        <a href="#" data-mark-read data-id="{{ n.id }}" class="small text-success mt-1 d-block">✓ Mark as read</a>
+                    {% endif %}
+                    </div>
+                </li>
+                {% empty %}
+                <li class="dropdown-item text-center text-muted py-3">No notifications</li>
+                {% endfor %}
+                <li><hr class="dropdown-divider my-1"></li>
+                <li><a class="dropdown-item text-center small" href="{% url 'notifications:all_notifications' %}">View all</a></li>
+            </ul>
+            </li>
+
 
 
                         {% if user.is_authenticated %}
@@ -1628,5 +1647,82 @@ x
 
     {% block scripts %}
     {% endblock %}
+   <script>
+document.addEventListener("DOMContentLoaded", function () {
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || "{{ csrf_token }}";
+
+  // Function to update badge count
+  function updateBadgeCount(change = -1) {
+    const badge = document.querySelector(".badge.bg-danger");
+    if (!badge) return;
+    let count = parseInt(badge.textContent || "0");
+    count = count + change;
+    badge.textContent = count > 0 ? count : "";
+  }
+
+  // ---- Mark Single Notification as Read ----
+  function markRead(notifId, element) {
+    if (!notifId) return console.error("Notification ID missing");
+    fetch("{% url 'notifications:mark_read' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrfToken,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "id=" + encodeURIComponent(notifId)
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        const container = element.closest(".notif-item");
+        if (container) container.classList.remove("fw-bold", "bg-light");
+        updateBadgeCount(-1);
+        element.remove(); // Remove button once marked
+      } else {
+        console.warn("Mark read failed:", data.error || data);
+      }
+    })
+    .catch(err => console.error("Notification AJAX error:", err));
+  }
+
+  document.body.addEventListener("click", function (e) {
+    const target = e.target.closest("[data-mark-read]");
+    if (target) {
+      e.preventDefault();
+      const notifId = target.dataset.id;
+      markRead(notifId, target);
+    }
+  });
+
+  // ---- Mark All Notifications as Read ----
+  const markAllBtn = document.querySelector("#markAllRead");
+  if (markAllBtn) {
+    markAllBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      fetch("{% url 'notifications:mark_all_read' %}", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+        },
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          document.querySelectorAll(".notif-item").forEach(el => {
+            el.classList.remove("fw-bold", "bg-light");
+            el.querySelector("[data-mark-read]")?.remove();
+          });
+          const badge = document.querySelector(".badge.bg-danger");
+          if (badge) badge.textContent = "";
+          console.log(data.message);
+        }
+      })
+      .catch(err => console.error("Mark all read failed:", err));
+    });
+  }
+});
+</script>
+
+
 </body>
 </html>

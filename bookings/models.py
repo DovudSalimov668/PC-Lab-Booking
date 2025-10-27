@@ -1,12 +1,16 @@
-# bookings/models.py (UPDATE EXISTING)
+# bookings/models.py
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from datetime import timedelta, time
 from labs.models import Lab
 
 User = settings.AUTH_USER_MODEL
 
+# --------------------------------------------------------------------
+# CHOICES
+# --------------------------------------------------------------------
 BOOKING_STATUS = [
     ("pending", "Pending"),
     ("approved", "Approved"),
@@ -23,9 +27,11 @@ RECURRENCE_FREQUENCY = [
     ("monthly", "Monthly"),
 ]
 
-
+# --------------------------------------------------------------------
+# BOOKING MODEL
+# --------------------------------------------------------------------
 class Booking(models.Model):
-    requester = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bookings",null=False)
+    requester = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bookings")
     lab = models.ForeignKey(
         Lab, on_delete=models.CASCADE, related_name="bookings",
         null=True, blank=True
@@ -36,40 +42,29 @@ class Booking(models.Model):
     purpose = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
     approval_required = models.BooleanField(default=False)
     approved_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='approved_bookings'
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_bookings'
     )
     admin_notes = models.TextField(blank=True, null=True)
-    
-    # Recurring booking fields
+
+    # Recurrence
     is_recurring = models.BooleanField(default=False)
     recurrence_frequency = models.CharField(
-        max_length=20, 
-        choices=RECURRENCE_FREQUENCY, 
-        default="none"
+        max_length=20, choices=RECURRENCE_FREQUENCY, default="none"
     )
     recurrence_end_date = models.DateField(null=True, blank=True)
     parent_booking = models.ForeignKey(
-        'self', 
-        on_delete=models.CASCADE, 
-        null=True, 
-        blank=True,
+        'self', on_delete=models.CASCADE, null=True, blank=True,
         related_name='recurring_instances'
     )
-    
+
     # Policy exception tracking
     is_policy_exception = models.BooleanField(default=False)
     exception_reason = models.TextField(blank=True, null=True)
     exception_approved_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='approved_exceptions'
     )
 
@@ -82,55 +77,90 @@ class Booking(models.Model):
         ]
 
     def __str__(self):
-        recurring_tag = " (Recurring)" if self.is_recurring else ""
-        return f"{self.lab.name if self.lab else 'Unknown Lab'} — {self.start:%Y-%m-%d %H:%M}{recurring_tag}"
+        tag = " (Recurring)" if self.is_recurring else ""
+        return f"{self.lab.name if self.lab else 'Unknown Lab'} — {self.start:%Y-%m-%d %H:%M}{tag}"
 
+    # ----------------------------------------------------------------
+    # VALIDATION
+    # ----------------------------------------------------------------
     def clean(self):
-        """Enhanced validation with policy checks"""
-        if self.pk:
-            try:
-                original = Booking.objects.get(pk=self.pk)
-                if original.start == self.start and original.end == self.end:
-                    if self.end <= self.start:
-                        raise ValidationError("Booking end must be after start.")
-                    return
-            except Booking.DoesNotExist:
-                pass
-
+        """Perform full booking validation including policy and time rules"""
         if not self.lab:
-            raise ValidationError("You must select a lab.")
+            raise ValidationError("A lab must be selected.")
 
         if self.end <= self.start:
-            raise ValidationError("Booking end must be after start.")
+            raise ValidationError("Booking end time must be after the start time.")
 
         if self.start < timezone.now():
-            raise ValidationError("Booking start must be in the future.")
+            raise ValidationError("You cannot create a booking in the past.")
 
-        # Check for overlaps
+        # Check for time slot rules (policy)
+        self._validate_time_restrictions()
+
+        # Check for overlapping bookings
         if self.has_conflict():
             raise ValidationError("This booking conflicts with an existing booking.")
-        
-        # Policy validations
+
+        # Check for duration and policy exceptions
         self._validate_against_policy()
 
-    def _validate_against_policy(self):
-        """Check booking against policy rules"""
-        # Check duration limits
-        duration_hours = (self.end - self.start).total_seconds() / 3600
-        
+    def _validate_time_restrictions(self):
+        """
+        Check that the booking is within allowed time slots and date window.
+        Controlled by Policy model (active one).
+        """
         try:
-            policy = Policy.objects.first()
-            if policy and duration_hours > policy.max_hours:
-                if not self.is_policy_exception:
-                    raise ValidationError(
-                        f"Booking duration ({duration_hours}h) exceeds maximum allowed ({policy.max_hours}h). "
-                        "Request a policy exception."
-                    )
+            policy = Policy.objects.filter(is_active=True).first()
         except Policy.DoesNotExist:
-            pass
+            return  # no policy defined
+
+        if not policy:
+            return
+
+        # ⏰ Time-of-day restrictions (8AM to 8PM for example)
+        work_start = time(hour=getattr(policy, "work_start_hour", 8))
+        work_end = time(hour=getattr(policy, "work_end_hour", 20))
+        if self.start.time() < work_start or self.end.time() > work_end:
+            if not self.is_policy_exception:
+                raise ValidationError(
+                    f"Bookings must be between {work_start.strftime('%H:%M')} and {work_end.strftime('%H:%M')}."
+                )
+
+        # 📅 Advance notice rules
+        now = timezone.now()
+        min_date = now + timedelta(days=policy.advance_notice_days)
+        max_date = now + timedelta(days=policy.max_advance_booking_days)
+
+        if self.start < min_date:
+            if not self.is_policy_exception:
+                raise ValidationError(
+                    f"Bookings must be made at least {policy.advance_notice_days} day(s) in advance."
+                )
+
+        if self.start.date() > max_date.date():
+            if not self.is_policy_exception:
+                raise ValidationError(
+                    f"You cannot book more than {policy.max_advance_booking_days} days ahead."
+                )
+
+    def _validate_against_policy(self):
+        """Duration and policy constraints"""
+        try:
+            policy = Policy.objects.filter(is_active=True).first()
+        except Policy.DoesNotExist:
+            policy = None
+
+        duration_hours = self.duration_hours
+
+        if policy and duration_hours > policy.max_hours:
+            if not self.is_policy_exception:
+                raise ValidationError(
+                    f"Booking duration ({duration_hours}h) exceeds the maximum allowed ({policy.max_hours}h). "
+                    "Request a policy exception."
+                )
 
     def has_conflict(self):
-        """Check for booking conflicts"""
+        """Check for overlapping bookings"""
         qs = Booking.objects.exclude(pk=self.pk)
         qs = qs.exclude(status__in=["cancelled", "rejected"])
         conflicts = qs.filter(
@@ -145,39 +175,112 @@ class Booking(models.Model):
             self.full_clean()
         super().save(*args, **kwargs)
 
+    # ----------------------------------------------------------------
+    # PROPERTIES
+    # ----------------------------------------------------------------
     def get_absolute_url(self):
         from django.urls import reverse
         return reverse("booking_detail", kwargs={"pk": self.pk})
-    
+
     @property
     def duration_hours(self):
-        """Calculate duration in hours"""
         delta = self.end - self.start
-        return round(delta.total_seconds() / 3600, 1)
-    
+        return round(delta.total_seconds() / 3600, 2)
+
     @property
     def duration_minutes(self):
-        """Calculate duration in minutes"""
         delta = self.end - self.start
         return int(delta.total_seconds() / 60)
-    
-    @property
-    def can_be_edited_by(self, user):
-        """Check if user can edit this booking"""
-        if user.can_edit_any_booking:
-            return True
-        return user == self.requester and self.status == 'pending'
-    
-    @property
-    def can_be_deleted_by(self, user):
-        """Check if user can delete this booking"""
-        if user.can_delete_any_booking:
-            return True
-        return user == self.requester and self.status in ['pending', 'approved']
+        # ----------------------------------------------------------------
+    # AVAILABLE TIME SLOTS CALCULATOR
+    # ----------------------------------------------------------------
+    @staticmethod
+    def available_time_slots_for_date(lab, date_obj, slot_minutes=30):
+        """
+        Returns available start-end intervals for a given lab and date,
+        respecting policy working hours and excluding overlapping bookings.
+        """
+
+        from datetime import datetime, timedelta, time
+        from django.utils import timezone
+
+        # ✅ Get active policy
+        policy = Policy.objects.filter(is_active=True).first()
+
+        if not policy:
+            work_start = time(hour=8)
+            work_end = time(hour=20)
+        else:
+            work_start = time(hour=policy.work_start_hour)
+            work_end = time(hour=policy.work_end_hour)
+
+        # ✅ Make aware start/end times for the day
+        tz = timezone.get_default_timezone()
+        day_start = timezone.make_aware(datetime.combine(date_obj, work_start), tz)
+        day_end = timezone.make_aware(datetime.combine(date_obj, work_end), tz)
+
+        # ✅ Get all active bookings for the lab that overlap this date
+        booked = Booking.objects.filter(
+            lab=lab,
+            start__lt=day_end,
+            end__gt=day_start,
+        ).exclude(status__in=['cancelled', 'rejected']).order_by('start')
+
+        # ✅ Build all possible slots (e.g., 30 min intervals)
+        slots = []
+        cur = day_start
+        step = timedelta(minutes=slot_minutes)
+        while cur + step <= day_end:
+            slots.append((cur, cur + step))
+            cur += step
+
+        # ✅ Mark unavailable slots based on booked times
+        available_slots = []
+        for start, end in slots:
+            overlap = booked.filter(start__lt=end, end__gt=start).exists()
+            if not overlap:
+                available_slots.append({
+                    'start': start.strftime('%H:%M'),
+                    'end': end.strftime('%H:%M'),
+                })
+
+        return available_slots
+
+    @staticmethod
+    def booked_intervals_for_date(lab, date_obj):
+        """
+        Return a list of already booked intervals for a given lab and date.
+        Useful for visualizing on calendar (red or blocked slots).
+        """
+        from datetime import datetime, time
+        from django.utils import timezone
+
+        tz = timezone.get_default_timezone()
+        day_start = timezone.make_aware(datetime.combine(date_obj, time.min), tz)
+        day_end = timezone.make_aware(datetime.combine(date_obj, time.max), tz)
+
+        booked_qs = Booking.objects.filter(
+            lab=lab,
+            start__lt=day_end,
+            end__gt=day_start,
+        ).exclude(status__in=['cancelled', 'rejected']).order_by('start')
+
+        return [
+            {
+                'start': b.start.strftime('%H:%M'),
+                'end': b.end.strftime('%H:%M'),
+                'requester': b.requester.username if hasattr(b.requester, 'username') else str(b.requester),
+                'status': b.status
+            }
+            for b in booked_qs
+        ]
 
 
+# --------------------------------------------------------------------
+# POLICY MODEL
+# --------------------------------------------------------------------
 class Policy(models.Model):
-    """Booking policies and restrictions"""
+    """Booking policies and time restrictions"""
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True)
     approval_required_for_students = models.BooleanField(default=False)
@@ -187,9 +290,17 @@ class Policy(models.Model):
     allow_recurring = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
 
+    # NEW FIELDS
+    work_start_hour = models.PositiveSmallIntegerField(default=8)
+    work_end_hour = models.PositiveSmallIntegerField(default=20)
+
     def __str__(self):
         return self.name
 
+# --------------------------------------------------------------------
+# POLICY EXCEPTION MODEL
+# --------------------------------------------------------------------
+# Add this to bookings/models.py (should already exist, but verify it's complete)
 
 class PolicyException(models.Model):
     """Track policy exception requests"""
@@ -220,9 +331,11 @@ class PolicyException(models.Model):
     def __str__(self):
         return f"Exception for Booking #{self.booking.id} - {self.status}"
 
-
+# --------------------------------------------------------------------
+# AUDIT LOG MODEL
+# --------------------------------------------------------------------
 class AuditLog(models.Model):
-    """Track all booking changes"""
+    """Track booking and policy actions"""
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=200)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -236,4 +349,4 @@ class AuditLog(models.Model):
         ordering = ['-timestamp']
 
     def __str__(self):
-        return f"{self.timestamp} {self.actor} {self.action}"
+        return f"{self.timestamp:%Y-%m-%d %H:%M} — {self.actor} — {self.action}"

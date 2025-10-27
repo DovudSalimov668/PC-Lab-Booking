@@ -8,6 +8,7 @@ Key Fixes:
 - All admin actions work for superusers
 - Proper status filtering everywhere
 """
+from notifications.services import NotificationService
 
 import logging
 import csv
@@ -190,30 +191,69 @@ else:
 # ----------------------------
 # FIXED: Permission helpers - NOW CHECK is_superuser FIRST
 # ----------------------------
+# ----------------------------
+# UPDATED: Permission helpers - Lecturers now have full admin access
+# ----------------------------
 def user_is_admin_role(user):
-    """Return True if user is superuser or belongs to any admin-like role."""
+    """
+    Return True if user is superuser or belongs to any admin-like role.
+    NOW INCLUDES LECTURERS!
+    """
     try:
-        # CRITICAL: Check superuser first!
+        # Check superuser first
         if user.is_superuser:
             return True
-        # ADD 'lecturer' to this list
-        return hasattr(user, "role") and user.role in ["program_admin", "lab_technician", "it_support", "it_admin", "manager", "lecturer"]
+        # ADD 'lecturer' HERE to give them admin access
+        return hasattr(user, "role") and user.role in [
+            "program_admin", 
+            "lab_technician", 
+            "it_support", 
+            "it_admin", 
+            "manager",
+            "lecturer"  # ← LECTURERS ADDED HERE
+        ]
     except Exception:
         return False
 
 
 def user_can_approve(user):
-    """Permission gate for approving bookings. Superuser or specific roles allowed."""
+    """
+    Permission gate for approving/rejecting/completing bookings.
+    Superuser or specific roles allowed.
+    NOW INCLUDES LECTURERS!
+    """
     try:
-        # CRITICAL: Check superuser first!
+        # Check superuser first
         if user.is_superuser:
             return True
-        # ADD 'lecturer' to this list
-        return hasattr(user, "role") and user.role in ["program_admin", "manager", "lecturer"]
+        # ADD 'lecturer' HERE to let them approve/reject/complete
+        return hasattr(user, "role") and user.role in [
+            "program_admin", 
+            "manager",
+            "lecturer"  # ← LECTURERS ADDED HERE
+        ]
+    except Exception:
+        return False
+# Add these permission functions to bookings/views.py (after existing permission helpers)
+
+def user_can_view_analytics(user):
+    """Permission gate for viewing utilization dashboards."""
+    try:
+        if user.is_superuser:
+            return True
+        return hasattr(user, "role") and user.role in ["program_admin", "manager", "lab_technician"]
     except Exception:
         return False
 
 
+def user_can_approve_policy_exceptions(user):
+    """Permission gate for approving policy exceptions - Only managers/directors."""
+    try:
+        if user.is_superuser:
+            return True
+        return hasattr(user, "role") and user.role in ["manager"]
+    except Exception:
+        return False
 # ----------------------------
 # Helper: Check for ACTIVE booking conflicts
 # ----------------------------
@@ -381,173 +421,183 @@ def create_booking(request):
     })
 
 
+# Add this to bookings/views.py - Replace the existing BookingDetailView.post() method
+# bookings/views.py
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.utils import timezone
+from django.views.generic import DetailView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .models import Booking
+from notifications.services import NotificationService  # ✅ Unified notifications
+# from notifications.utils import user_can_approve, user_is_admin_role  # if you have helper utils
+# from .utils import booking_duration_hours  # your helper for duration
+
+
 class BookingDetailView(LoginRequiredMixin, DetailView):
     model = Booking
     template_name = "bookings/booking_detail.html"
     context_object_name = "booking"
 
     def post(self, request, *args, **kwargs):
-        """Handle action forms submitted from detail page"""
+        """
+        Handle all booking actions with full notification logic.
+        Admins can override any status; users can cancel their own active bookings.
+        """
         booking = self.get_object()
+        user = request.user
         action = request.POST.get("action")
         admin_notes = request.POST.get("admin_notes", "").strip()
-        user = request.user
 
         if not action:
-            messages.error(request, "No action specified")
+            messages.error(request, "No action specified.")
             return redirect("booking_detail", pk=booking.pk)
 
-        # Cancel - Allow both requester and admin
+        # Determine privileges
+        is_admin = user.is_superuser or user_can_approve(user)
+        is_owner = user == booking.requester
+
+        # -----------------------------
+        # 1️⃣ CANCEL
+        # -----------------------------
         if action == "cancel":
-            if not (user == booking.requester or user.is_superuser or user_is_admin_role(user)):
-                messages.error(request, "You don't have permission to cancel this booking")
+            if not (is_owner or is_admin):
+                messages.error(request, "You don't have permission to cancel this booking.")
                 return redirect("booking_detail", pk=booking.pk)
-            
-            if booking.status in ["cancelled", "completed"]:
-                messages.error(request, f"Cannot cancel booking with status {booking.status}")
+
+            if not is_admin and booking.status in ["cancelled", "completed"]:
+                messages.error(request, f"Cannot cancel a {booking.status} booking.")
                 return redirect("booking_detail", pk=booking.pk)
-            
+
             booking.status = "cancelled"
             booking.save(update_fields=["status"])
-            
-            # Notify about cancellation
-            try:
-                if user != booking.requester:
-                    if HAVE_EXTERNAL_NOTIFICATION and ExternalNotificationService:
-                        ExternalNotificationService.notify_booking_cancelled(booking, user)
-                    else:
-                        fallback = FallbackNotificationService()
-                        fallback.create(
-                            recipient=booking.requester,
-                            title=f"Booking #{booking.id} cancelled",
-                            message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start} was cancelled by {safe_get_username(user)}.",
-                            link=f"/bookings/{booking.id}/",
-                            sender=user
-                        )
-            except Exception:
-                logger.exception("Error notifying booking cancellation")
-            
-            messages.success(request, "Booking cancelled successfully")
+            messages.success(request, "Booking cancelled successfully.")
+
+            # 🔔 Notify
+            if is_admin:
+                NotificationService.notify_booking_cancelled(booking, user)
+            elif is_owner:
+                # Owner cancelled their own booking -> notify admins
+                NotificationService.notify_booking_created(booking)
+
             return redirect("booking_list")
 
-        # Approve - Admin only
+        # -----------------------------
+        # 2️⃣ APPROVE
+        # -----------------------------
         if action == "approve":
-            if not user_can_approve(user):
-                messages.error(request, "Permission denied")
+            if not is_admin:
+                messages.error(request, "You do not have permission to approve bookings.")
                 return redirect("booking_detail", pk=booking.pk)
-            
-            if booking.status != "pending":
-                messages.error(request, "Only pending bookings can be approved")
-                return redirect("booking_detail", pk=booking.pk)
-            
+
             booking.status = "approved"
             booking.approved_by = user
             if admin_notes:
                 booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "approved_by", "admin_notes"])
-            
-            # Notify requester
-            try:
-                if HAVE_EXTERNAL_NOTIFICATION and ExternalNotificationService:
-                    ExternalNotificationService.notify_booking_approved(booking, user)
-                else:
-                    fallback = FallbackNotificationService()
-                    fallback.create(
-                        recipient=booking.requester,
-                        title=f"Booking #{booking.id} approved",
-                        message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start} was approved.",
-                        link=f"/bookings/{booking.id}/",
-                        sender=user
-                    )
-            except Exception:
-                logger.exception("Error notifying booking approval")
-            
-            messages.success(request, "Booking approved successfully")
+            messages.success(request, "Booking approved successfully.")
+
+            # 🔔 Notify requester
+            NotificationService.notify_booking_approved(booking, user)
             return redirect("booking_detail", pk=booking.pk)
 
-        # Reject - Admin only
+        # -----------------------------
+        # 3️⃣ REJECT
+        # -----------------------------
         if action == "reject":
-            if not user_can_approve(user):
-                messages.error(request, "Permission denied")
+            if not is_admin:
+                messages.error(request, "You do not have permission to reject bookings.")
                 return redirect("booking_detail", pk=booking.pk)
-            
-            if booking.status != "pending":
-                messages.error(request, "Only pending bookings can be rejected")
-                return redirect("booking_detail", pk=booking.pk)
-            
+
             if not admin_notes:
-                messages.error(request, "Reason for rejection is required")
+                messages.error(request, "Reason for rejection is required.")
                 return redirect("booking_detail", pk=booking.pk)
-            
+
             booking.status = "rejected"
             booking.approved_by = user
             booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "approved_by", "admin_notes"])
-            
-            # Notify requester
-            try:
-                if HAVE_EXTERNAL_NOTIFICATION and ExternalNotificationService:
-                    ExternalNotificationService.notify_booking_rejected(booking, user)
-                else:
-                    fallback = FallbackNotificationService()
-                    fallback.create(
-                        recipient=booking.requester,
-                        title=f"Booking #{booking.id} rejected",
-                        message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start} was rejected.\nReason: {admin_notes}",
-                        link=f"/bookings/{booking.id}/",
-                        sender=user
-                    )
-            except Exception:
-                logger.exception("Error notifying booking rejection")
-            
-            messages.success(request, "Booking rejected")
+            messages.warning(request, "Booking rejected.")
+
+            # 🔔 Notify requester
+            NotificationService.notify_booking_rejected(booking, user)
             return redirect("booking_detail", pk=booking.pk)
 
-        # Complete - Admin only
+        # -----------------------------
+        # 4️⃣ COMPLETE
+        # -----------------------------
         if action == "complete":
-            if not user_can_approve(user):
-                messages.error(request, "Permission denied")
+            if not is_admin:
+                messages.error(request, "You do not have permission to mark bookings as complete.")
                 return redirect("booking_detail", pk=booking.pk)
-            
-            if booking.status != "approved":
-                messages.error(request, "Only approved bookings can be marked completed")
-                return redirect("booking_detail", pk=booking.pk)
-            
+
             booking.status = "completed"
             if admin_notes:
                 booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "admin_notes"])
-            
-            # Notify requester
-            try:
-                if HAVE_EXTERNAL_NOTIFICATION and ExternalNotificationService:
-                    ExternalNotificationService.notify_booking_completed(booking, user)
-                else:
-                    fallback = FallbackNotificationService()
-                    fallback.create(
-                        recipient=booking.requester,
-                        title=f"Booking #{booking.id} marked complete",
-                        message=f"Booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start} has been marked complete.",
-                        link=f"/bookings/{booking.id}/",
-                        sender=user
-                    )
-            except Exception:
-                logger.exception("Error notifying booking completed")
-            
-            messages.success(request, "Booking marked as complete")
+            messages.success(request, "Booking marked as complete.")
+
+            # 🔔 Notify requester
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking Completed: {booking.lab.name}",
+                message=(
+                    f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
+                    f"has been marked as completed."
+                ),
+                link=f"/bookings/{booking.id}/",
+                sender=user,
+                notification_type="booking_completed",
+            )
             return redirect("booking_detail", pk=booking.pk)
 
-        messages.error(request, "Invalid action")
+        # -----------------------------
+        # 5️⃣ REOPEN
+        # -----------------------------
+        if action == "reopen":
+            if not is_admin:
+                messages.error(request, "You do not have permission to reopen bookings.")
+                return redirect("booking_detail", pk=booking.pk)
+
+            booking.status = "pending"
+            booking.approved_by = None
+            if admin_notes:
+                booking.admin_notes = admin_notes
+            booking.save(update_fields=["status", "approved_by", "admin_notes"])
+            messages.success(request, "Booking reopened and set to pending.")
+
+            # 🔔 Notify requester
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking Reopened: {booking.lab.name}",
+                message=(
+                    f"Your booking for {booking.lab.name} has been reopened and is now pending review again."
+                ),
+                link=f"/bookings/{booking.id}/",
+                sender=user,
+                notification_type="booking_reopened",
+            )
+            return redirect("booking_detail", pk=booking.pk)
+
+        # -----------------------------
+        # Invalid Action
+        # -----------------------------
+        messages.error(request, "Invalid action.")
         return redirect("booking_detail", pk=booking.pk)
 
+    # ----------------------------------------------------------------
+    # Context data for template
+    # ----------------------------------------------------------------
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         booking = self.get_object()
-        ctx["duration_hours"] = booking_duration_hours(booking)
-        ctx["can_edit"] = (self.request.user == booking.requester and booking.status == "pending") or self.request.user.is_superuser or user_is_admin_role(self.request.user)
-        ctx["can_approve"] = user_can_approve(self.request.user)
-        return ctx
+        user = self.request.user
 
+        ctx["duration_hours"] = booking_duration_hours(booking)
+        ctx["can_edit"] = (user == booking.requester and booking.status == "pending") or user_is_admin_role(user)
+        ctx["can_approve"] = user.is_superuser or user_can_approve(user)
+        ctx["is_admin"] = ctx["can_approve"]
+        return ctx
 
 class BookingUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Booking
@@ -1154,7 +1204,8 @@ class UtilizationDashboardView(LoginRequiredMixin, UserPassesTestMixin, Template
     template_name = "bookings/utilization_dashboard.html"
 
     def test_func(self):
-        return self.request.user.is_superuser or user_is_admin_role(self.request.user)
+        """Allow superusers, managers, program admins, and lab technicians"""
+        return user_can_view_analytics(self.request.user)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1164,7 +1215,11 @@ class UtilizationDashboardView(LoginRequiredMixin, UserPassesTestMixin, Template
         total_bookings = Booking.objects.filter(created_at__gte=start_date).count()
         approved_bookings = Booking.objects.filter(created_at__gte=start_date, status="approved").count()
         pending_bookings = Booking.objects.filter(status="pending").count()
+        completed_bookings = Booking.objects.filter(created_at__gte=start_date, status="completed").count()
+        rejected_bookings = Booking.objects.filter(created_at__gte=start_date, status="rejected").count()
+        cancelled_bookings = Booking.objects.filter(created_at__gte=start_date, status="cancelled").count()
 
+        # Lab utilization stats
         labs = Lab.objects.all()
         lab_stats = []
         for lab in labs:
@@ -1179,23 +1234,56 @@ class UtilizationDashboardView(LoginRequiredMixin, UserPassesTestMixin, Template
             booking_count = bookings.count()
             available_hours = (WORK_END_HOUR - WORK_START_HOUR) * days_back
             utilization = round((total_hours / available_hours * 100) if available_hours > 0 else 0.0, 1)
-            lab_stats.append({"lab": lab, "booking_count": booking_count, "total_hours": total_hours, "utilization": utilization})
+            lab_stats.append({
+                "lab": lab, 
+                "booking_count": booking_count, 
+                "total_hours": total_hours, 
+                "utilization": utilization
+            })
 
-        bookings_by_day = Booking.objects.filter(start__gte=start_date).annotate(date=TruncDate("start")).values("date").annotate(count=Count("id")).order_by("date")
-        status_stats = Booking.objects.filter(created_at__gte=start_date).values("status").annotate(count=Count("id")).order_by("-count")
-        peak_hours = Booking.objects.filter(start__gte=start_date, status__in=["approved", "completed"]).extra(select={"hour": "EXTRACT(hour FROM start)"}).values("hour").annotate(count=Count("id")).order_by("-count")[:10]
-        avg_duration = Booking.objects.filter(created_at__gte=start_date).aggregate(avg_minutes=Avg("duration_minutes" if hasattr(Booking, "duration_minutes") else None))
+        # Bookings by day
+        bookings_by_day = Booking.objects.filter(start__gte=start_date).annotate(
+            date=TruncDate("start")
+        ).values("date").annotate(count=Count("id")).order_by("date")
+        
+        # Status breakdown
+        status_stats = Booking.objects.filter(created_at__gte=start_date).values(
+            "status"
+        ).annotate(count=Count("id")).order_by("-count")
+        
+        # Peak hours
+        peak_hours = Booking.objects.filter(
+            start__gte=start_date, 
+            status__in=["approved", "completed"]
+        ).extra(
+            select={"hour": "EXTRACT(hour FROM start)"}
+        ).values("hour").annotate(count=Count("id")).order_by("-count")[:10]
+
+        # Average duration
+        avg_duration = Booking.objects.filter(created_at__gte=start_date).aggregate(
+            avg_minutes=Avg("duration_minutes" if hasattr(Booking, "duration_minutes") else None)
+        )
+
+        # Top requesters
+        top_requesters = Booking.objects.filter(created_at__gte=start_date).values(
+            "requester__username", "requester__email"
+        ).annotate(count=Count("id")).order_by("-count")[:10]
 
         ctx.update({
             "total_bookings": total_bookings,
             "approved_bookings": approved_bookings,
             "pending_bookings": pending_bookings,
+            "completed_bookings": completed_bookings,
+            "rejected_bookings": rejected_bookings,
+            "cancelled_bookings": cancelled_bookings,
             "lab_stats": lab_stats,
             "bookings_by_day": list(bookings_by_day),
             "status_stats": list(status_stats),
             "peak_hours": list(peak_hours),
             "avg_duration": avg_duration.get("avg_minutes") if isinstance(avg_duration, dict) else None,
+            "top_requesters": list(top_requesters),
             "days_back": days_back,
+            "can_export": user_is_admin_role(self.request.user),
         })
         return ctx
 
@@ -1841,23 +1929,16 @@ class MyBookingsView(LoginRequiredMixin, ListView):
 # ----------------------------
 # Policy exception request flow (optional)
 # ----------------------------
+# ----------------------------
+# UPDATED: Policy Exception Request View
+# ----------------------------
 @method_decorator(login_required, name="dispatch")
 class PolicyExceptionRequestView(LoginRequiredMixin, CreateView):
-    """
-    If you have a PolicyException model, this view allows a requester to submit an exception for a booking.
-    """
-    model = PolicyException if PolicyException is not None else None
-    # If the model not present, render an informative message
+    """Allow users to request policy exceptions for their bookings"""
+    model = PolicyException
     template_name = "bookings/policy_exception_form.html"
-    # form_class must be defined if PolicyException model exists
-    form_class = None
+    fields = ["reason"]
     success_url = reverse_lazy("booking_list")
-
-    def dispatch(self, request, *args, **kwargs):
-        if PolicyException is None:
-            messages.error(request, "PolicyException feature is not enabled on this installation.")
-            return redirect("booking_list")
-        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1868,41 +1949,56 @@ class PolicyExceptionRequestView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         booking_id = self.kwargs.get("booking_id")
         booking = get_object_or_404(Booking, pk=booking_id)
+        
         if self.request.user != booking.requester:
             messages.error(self.request, "You can only request exceptions for your own bookings.")
             return redirect("booking_detail", pk=booking_id)
+        
         exception = form.save(commit=False)
         exception.booking = booking
         exception.requested_by = self.request.user
         exception.status = "pending"
         exception.save()
+        
         booking.is_policy_exception = True
         booking.exception_reason = exception.reason
         booking.save(update_fields=["is_policy_exception", "exception_reason"])
-        # notify managers
+        
+        # Notify managers
         try:
-            from users.models import User as UserModel  # type: ignore
+            from users.models import User as UserModel
             managers = UserModel.objects.filter(role="manager")
             for m in managers:
-                NotificationService.create(m, f"Policy exception requested for booking {booking.id}", f"{self.request.user.username} requested exception: {exception.reason}", link=f"/bookings/{booking.id}/")
+                try:
+                    fallback = FallbackNotificationService()
+                    fallback.create(
+                        recipient=m,
+                        title=f"Policy exception requested: Booking #{booking.id}",
+                        message=f"{self.request.user.username} requested a policy exception.\nReason: {exception.reason}",
+                        link=f"/bookings/policy-exception/{exception.id}/review/",
+                        sender=self.request.user
+                    )
+                except Exception:
+                    logger.exception("Failed to notify manager about policy exception")
         except Exception:
-            logger.exception("Failed to notify managers for policy exception")
-        messages.success(self.request, "Policy exception request submitted.")
+            logger.exception("Failed to load managers for policy exception notification")
+        
+        messages.success(self.request, "Policy exception request submitted successfully.")
         return redirect("booking_detail", pk=booking_id)
-
 
 # ----------------------------
 # Policy exception approve/reject
 # ----------------------------
 @method_decorator(login_required, name="dispatch")
-class PolicyExceptionApprovalView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
-    model = PolicyException if PolicyException is not None else None
-    fields = ["review_notes"] if PolicyException is not None else []
+class PolicyExceptionApprovalView(LoginRequiredMixin, UserPassesTestMixin, DetailView):
+    """Manager view to approve/reject policy exceptions"""
+    model = PolicyException
     template_name = "bookings/policy_exception_review.html"
+    context_object_name = "exception"
 
     def test_func(self):
-        # only managers / admins
-        return user_is_admin_role(self.request.user)
+        """Only managers and superusers can approve policy exceptions"""
+        return user_can_approve_policy_exceptions(self.request.user)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1910,15 +2006,14 @@ class PolicyExceptionApprovalView(LoginRequiredMixin, UserPassesTestMixin, Updat
         return ctx
 
     def post(self, request, *args, **kwargs):
-        if PolicyException is None:
-            messages.error(request, "PolicyException model not available.")
-            return redirect("booking_list")
         exception = self.get_object()
         action = request.POST.get("action")
         review_notes = request.POST.get("review_notes", "")
+        
         if action not in ["approve", "reject"]:
             messages.error(request, "Invalid action.")
             return redirect("policy_exception_review", pk=exception.pk)
+        
         try:
             with transaction.atomic():
                 exception.status = "approved" if action == "approve" else "rejected"
@@ -1926,35 +2021,73 @@ class PolicyExceptionApprovalView(LoginRequiredMixin, UserPassesTestMixin, Updat
                 exception.reviewed_at = timezone.now()
                 exception.review_notes = review_notes
                 exception.save()
+                
                 booking = exception.booking
                 if action == "approve":
                     booking.is_policy_exception = False
                     booking.status = "approved"
                     booking.approved_by = request.user
+                    booking.exception_approved_by = request.user
                 else:
                     booking.is_policy_exception = False
                     booking.exception_reason = None
                     booking.status = "rejected"
+                
                 booking.save()
-                # notify requester
+                
+                # Notify requester
                 try:
-                    NotificationService.create(
+                    fallback = FallbackNotificationService()
+                    fallback.create(
                         recipient=booking.requester,
-                        title=f"Policy exception {exception.status}: booking #{booking.id}",
-                        message=f"Your policy exception request has been {exception.status}. Notes: {review_notes}",
+                        title=f"Policy exception {exception.status}: Booking #{booking.id}",
+                        message=f"Your policy exception request has been {exception.status}.\nNotes: {review_notes}",
                         link=f"/bookings/{booking.id}/",
                         sender=request.user
                     )
                 except Exception:
                     logger.exception("Failed to notify requester about policy exception decision")
-                messages.success(request, f"Policy exception {exception.status}.")
-                return redirect("booking_detail", pk=booking.pk)
+                
+                messages.success(request, f"Policy exception {exception.status} successfully.")
+                return redirect("manager_dashboard")
         except Exception as exc:
             logger.exception("Error processing policy exception: %s", exc)
-            messages.error(request, "An error occurred while processing exception.")
+            messages.error(request, "An error occurred while processing the exception.")
             return redirect("policy_exception_review", pk=exception.pk)
 
 
+# ----------------------------
+# NEW: Policy Exception List View - Managers can see all pending exceptions
+# ----------------------------
+class PolicyExceptionListView(LoginRequiredMixin, UserPassesTestMixin, ListView):
+    """List all policy exceptions for managers"""
+    model = PolicyException
+    template_name = "bookings/policy_exception_list.html"
+    context_object_name = "exceptions"
+    paginate_by = 20
+
+    def test_func(self):
+        """Only managers and superusers can view policy exception list"""
+        return user_can_approve_policy_exceptions(self.request.user)
+
+    def get_queryset(self):
+        status_filter = self.request.GET.get("status", "pending")
+        qs = PolicyException.objects.select_related(
+            "booking", "booking__lab", "requested_by"
+        ).order_by("-created_at")
+        
+        if status_filter and status_filter != "all":
+            qs = qs.filter(status=status_filter)
+        
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["pending_count"] = PolicyException.objects.filter(status="pending").count()
+        ctx["approved_count"] = PolicyException.objects.filter(status="approved").count()
+        ctx["rejected_count"] = PolicyException.objects.filter(status="rejected").count()
+        ctx["status_filter"] = self.request.GET.get("status", "pending")
+        return ctx
 # ----------------------------
 # Utility: get upcoming availability for one lab for full month (helper for calendar)
 # ----------------------------
@@ -2111,3 +2244,60 @@ def handle_known_migrations_issues(request, exc):
 # 2. If you have different roles or permission flags on User (can_approve_bookings, can_delete_any_booking),
 #    you can add methods on your User model or adapt user_is_admin_role / user_can_approve accordingly.
 # 3. Ensure the templates referenced exist and their form names match (booking_form.html, booking_detail.html, lab_calendar.html, etc).
+# bookings/views.py
+from django.http import JsonResponse
+from datetime import datetime
+from labs.models import Lab
+from .models import Booking
+from django.http import JsonResponse
+from datetime import datetime, timedelta, time
+from .models import Booking
+from labs.models import Lab
+
+@login_required
+def lab_availability_json(request):
+    lab_id = request.GET.get("lab_id")
+    date_str = request.GET.get("date")
+
+    if not lab_id or not date_str:
+        return JsonResponse({"available_slots": []})
+
+    try:
+        lab = Lab.objects.get(pk=lab_id)
+    except Lab.DoesNotExist:
+        return JsonResponse({"available_slots": []})
+
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    # Define your working hours
+    start_hour = 8
+    end_hour = 20
+    slot_length = timedelta(minutes=60)
+
+    slots = []
+    current = datetime.combine(date_obj, time(start_hour))
+    end_time = datetime.combine(date_obj, time(end_hour))
+
+    # Generate hourly slots
+    while current + slot_length <= end_time:
+        slots.append({
+            "start": current.strftime("%H:%M"),
+            "end": (current + slot_length).strftime("%H:%M"),
+        })
+        current += slot_length
+
+    # Remove already booked slots
+    booked = Booking.objects.filter(
+        lab=lab,
+        start__date=date_obj,
+        status__in=["pending", "approved"]
+    )
+    for b in booked:
+        slots = [
+            s for s in slots
+            if not (
+                b.start.time() <= datetime.strptime(s["start"], "%H:%M").time() < b.end.time()
+            )
+        ]
+
+    return JsonResponse({"available_slots": slots})

@@ -30,4 +30,5 @@ urlpatterns = [
     path('dashboard/manager/', views.ManagerDashboardView.as_view(), name='manager_dashboard'),
     
     
+    
 ]

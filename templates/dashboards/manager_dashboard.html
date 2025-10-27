@@ -1,9 +1,229 @@
-{% extends 'layouts/base.html' %}
-{% block title %}Manager Dashboard{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Manager Dashboard - Utilization & Analytics{% endblock %}
+
+{% block extra_css %}
+<style>
+  .stat-card {
+    transition: transform 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<h2>Manager / Director Dashboard</h2>
-<p>Utilization and policy exception requests.</p>
-<ul>
-  <li><a href="{% url 'reports_utilization' %}">Utilization reports</a></li>
-</ul>
+<div class="container-fluid mt-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2 me-2"></i>Manager Dashboard</h2>
+    <div>
+      <span class="badge bg-secondary">Last {{ days_back }} days</span>
+      <a href="{% url 'export_bookings_csv' %}" class="btn btn-success btn-sm ms-2">
+        <i class="bi bi-download me-1"></i>Export CSV
+      </a>
+    </div>
+  </div>
+
+  <!-- Booking Statistics -->
+  <div class="row mb-4">
+    <div class="col-md-4">
+      <div class="card stat-card bg-primary text-white">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="text-uppercase mb-1">Total Bookings</h6>
+              <h2 class="mb-0">{{ total_bookings }}</h2>
+            </div>
+            <i class="bi bi-calendar-check display-4 opacity-50"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card stat-card bg-success text-white">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="text-uppercase mb-1">Approved</h6>
+              <h2 class="mb-0">{{ approved_bookings }}</h2>
+            </div>
+            <i class="bi bi-check-circle display-4 opacity-50"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card stat-card bg-info text-white">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="text-uppercase mb-1">Completed</h6>
+              <h2 class="mb-0">{{ completed_bookings }}</h2>
+            </div>
+            <i class="bi bi-check-all display-4 opacity-50"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lab Utilization & Top Requesters -->
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-primary text-white">
+          <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Top Lab Utilization</h5>
+        </div>
+        <div class="card-body">
+          {% if lab_stats %}
+          <div class="list-group list-group-flush">
+            {% for stat in lab_stats %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ stat.lab.name }}</strong>
+                <br>
+                <small class="text-muted">{{ stat.booking_count }} bookings • {{ stat.total_hours }}h total</small>
+              </div>
+              <div class="text-end">
+                <h4 class="mb-0">{{ stat.utilization }}%</h4>
+                <div class="progress" style="width: 100px; height: 8px;">
+                  <div class="progress-bar 
+                    {% if stat.utilization >= 80 %}bg-danger
+                    {% elif stat.utilization >= 50 %}bg-warning
+                    {% else %}bg-success{% endif %}" 
+                    style="width: {{ stat.utilization }}%"></div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-center py-4">No utilization data available</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-success text-white">
+          <h5 class="mb-0"><i class="bi bi-people me-2"></i>Top Requesters</h5>
+        </div>
+        <div class="card-body">
+          {% if top_requesters %}
+          <div class="list-group list-group-flush">
+            {% for requester in top_requesters %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ requester.requester__username }}</strong>
+                <br>
+                <small class="text-muted">{{ requester.requester__email }}</small>
+              </div>
+              <span class="badge bg-primary rounded-pill">{{ requester.count }} bookings</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-center py-4">No data available</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <i class="bi bi-calendar-check display-3 text-primary mb-3"></i>
+          <h5 class="card-title">All Bookings</h5>
+          <p class="card-text">View and manage all booking requests in the system</p>
+          <a href="{% url 'booking_list' %}" class="btn btn-primary">
+            <i class="bi bi-list me-1"></i>View All Bookings
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body text-center">
+          <i class="bi bi-file-earmark-bar-graph display-3 text-success mb-3"></i>
+          <h5 class="card-title">Export Reports</h5>
+          <p class="card-text">Download booking data and analytics reports</p>
+          <a href="{% url 'export_bookings_csv' %}" class="btn btn-success">
+            <i class="bi bi-download me-1"></i>Export CSV
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Breakdown & Peak Hours -->
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-info text-white">
+          <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Booking Status Breakdown</h5>
+        </div>
+        <div class="card-body">
+          {% if status_stats %}
+          <div class="row">
+            {% for stat in status_stats %}
+            <div class="col-6 mb-3">
+              <div class="text-center">
+                <h3 class="mb-1">{{ stat.count }}</h3>
+                <span class="badge bg-{% if stat.status == 'approved' %}success{% elif stat.status == 'pending' %}warning{% elif stat.status == 'rejected' %}danger{% elif stat.status == 'completed' %}info{% else %}secondary{% endif %} fs-6">
+                  {{ stat.status|upper }}
+                </span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-center py-4">No status data available</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-warning text-dark">
+          <h5 class="mb-0"><i class="bi bi-clock me-2"></i>Peak Usage Hours</h5>
+        </div>
+        <div class="card-body">
+          {% if peak_hours %}
+          <div class="list-group list-group-flush">
+            {% for hour in peak_hours %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <span><strong>{{ hour.hour|floatformat:0 }}:00</strong> - {{ hour.hour|add:1|floatformat:0 }}:00</span>
+              <span class="badge bg-warning text-dark rounded-pill">{{ hour.count }} bookings</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted text-center py-4">No peak hour data available</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+ 
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

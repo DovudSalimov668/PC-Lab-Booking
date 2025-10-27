@@ -416,5 +416,123 @@
     </div>
   </div>
 </div>
+<!-- Replace the Action Buttons section in booking_detail.html -->
+<!-- This shows ALL action buttons for admins regardless of current status -->
 
+<!-- Action Buttons -->
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+      <div class="d-flex flex-wrap gap-2">
+        
+        <!-- Edit Button -->
+        {% if user.is_superuser or is_admin %}
+          <a href="{% url 'booking_edit' booking.id %}" class="btn btn-outline-primary btn-action">
+            <i class="bi bi-pencil me-1"></i>Edit Booking
+          </a>
+        {% elif user == booking.requester and booking.status == 'pending' %}
+          <a href="{% url 'booking_edit' booking.id %}" class="btn btn-outline-primary btn-action">
+            <i class="bi bi-pencil me-1"></i>Edit Booking
+          </a>
+        {% endif %}
+
+        <!-- ADMIN ACTIONS - Show for all statuses -->
+        {% if user.is_superuser or is_admin %}
+          
+          <!-- Approve Button - Show for any status except approved -->
+          {% if booking.status != 'approved' %}
+          <button type="button" class="btn btn-success btn-action" data-bs-toggle="modal" data-bs-target="#approveModal">
+            <i class="bi bi-check-circle me-1"></i>Approve
+          </button>
+          {% endif %}
+
+          <!-- Reject Button - Show for any status except rejected -->
+          {% if booking.status != 'rejected' %}
+          <button type="button" class="btn btn-danger btn-action" data-bs-toggle="modal" data-bs-target="#rejectModal">
+            <i class="bi bi-x-circle me-1"></i>Reject
+          </button>
+          {% endif %}
+
+          <!-- Complete Button - Show for any status except completed -->
+          {% if booking.status != 'completed' %}
+          <button type="button" class="btn btn-info btn-action" data-bs-toggle="modal" data-bs-target="#completeModal">
+            <i class="bi bi-check2-all me-1"></i>Mark as Complete
+          </button>
+          {% endif %}
+
+          <!-- Cancel Button - Show for any status except cancelled -->
+          {% if booking.status != 'cancelled' %}
+          <button type="button" class="btn btn-outline-danger btn-action" data-bs-toggle="modal" data-bs-target="#cancelModal">
+            <i class="bi bi-x-circle me-1"></i>Cancel Booking
+          </button>
+          {% endif %}
+
+          <!-- Reopen Button - Show for rejected/cancelled/completed -->
+          {% if booking.status in 'rejected,cancelled,completed' %}
+          <button type="button" class="btn btn-warning btn-action" data-bs-toggle="modal" data-bs-target="#reopenModal">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen
+          </button>
+          {% endif %}
+
+          <!-- Delete Button - Always show for admins -->
+          <button type="button" class="btn btn-danger btn-action" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            <i class="bi bi-trash me-1"></i>Delete Booking
+          </button>
+
+        {% elif user == booking.requester and booking.status not in 'cancelled,completed,rejected' %}
+          <!-- Regular users can only cancel their own active bookings -->
+          <button type="button" class="btn btn-outline-danger btn-action" data-bs-toggle="modal" data-bs-target="#cancelModal">
+            <i class="bi bi-x-circle me-1"></i>Cancel Booking
+          </button>
+        {% endif %}
+
+      </div>
+
+      <!-- Back Button -->
+      <a href="{% url 'booking_list' %}" class="btn btn-outline-secondary btn-action">
+        <i class="bi bi-arrow-left me-1"></i>Back to List
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Add this NEW Reopen Modal after the other modals -->
+<!-- Reopen Modal -->
+<div class="modal fade" id="reopenModal" tabindex="-1" aria-labelledby="reopenModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title" id="reopenModalLabel">
+          <i class="bi bi-arrow-counterclockwise me-2"></i>Reopen Booking
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'booking_detail' booking.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reopen">
+        <div class="modal-body">
+          <p>Reopen this booking and set its status back to <strong>Pending</strong>?</p>
+          <div class="mb-3">
+            <label for="reopenNotes" class="form-label">Notes (Optional)</label>
+            <textarea class="form-control" id="reopenNotes" name="admin_notes" rows="3" placeholder="Add any notes about reopening..."></textarea>
+          </div>
+          <div class="alert alert-info mb-0">
+            <strong>Current Status:</strong> {{ booking.get_status_display }}<br>
+            <strong>New Status:</strong> Pending<br><br>
+            <strong>Booking Details:</strong><br>
+            Lab: {{ booking.lab.name }}<br>
+            Date: {{ booking.start|date:"M d, Y" }}<br>
+            Time: {{ booking.start|date:"g:i A" }} - {{ booking.end|date:"g:i A" }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen Booking
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}

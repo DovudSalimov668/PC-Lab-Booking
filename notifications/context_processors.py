@@ -12,4 +12,5 @@ def notifications_context(request):
     return {
         'notifications': latest,
         'unread_notifications_count': unread_count,
+        'global_notifications': latest,  # <-- ensures dropdown uses the same data
     }

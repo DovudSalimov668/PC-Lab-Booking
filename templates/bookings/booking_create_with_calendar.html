@@ -6,5 +6,55 @@
   {% csrf_token %}
   {{ form.as_p }}
   <button class="btn btn-primary">Submit</button>
+  
 </form>
+<!-- ✅ STEP 5 — Paste at bottom of booking_form_enhanced.html -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const labField = document.getElementById("id_lab");
+    const dateField = document.getElementById("id_date");
+    const slotSelect = document.getElementById("id_time_slot");
+    const startField = document.getElementById("id_start");
+    const endField = document.getElementById("id_end");
+
+    async function fetchSlots() {
+        const labId = labField.value;
+        const date = dateField.value;
+        if (!labId || !date) return;
+
+        const res = await fetch(`/bookings/lab_availability_json/?lab_id=${labId}&date=${date}`);
+        const data = await res.json();
+
+        slotSelect.innerHTML = "<option value=''>-- Select a time slot --</option>";
+
+        if (data.available_slots && data.available_slots.length) {
+            data.available_slots.forEach(slot => {
+                const option = document.createElement("option");
+                option.value = `${slot.start}-${slot.end}`;
+                option.textContent = `${slot.start} — ${slot.end}`;
+                slotSelect.appendChild(option);
+            });
+        } else {
+            const option = document.createElement("option");
+            option.textContent = "No available slots for this date";
+            slotSelect.appendChild(option);
+        }
+    }
+
+    // Trigger when lab or date changes
+    labField.addEventListener("change", fetchSlots);
+    dateField.addEventListener("change", fetchSlots);
+
+    // Auto-fill start and end when user picks slot
+    slotSelect.addEventListener("change", (e) => {
+        const [start, end] = e.target.value.split("-");
+        const date = dateField.value;
+        if (start && end && date) {
+            startField.value = `${date}T${start}`;
+            endField.value = `${date}T${end}`;
+        }
+    });
+});
+</script>
+
 {% endblock %}
