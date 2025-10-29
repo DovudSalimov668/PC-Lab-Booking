@@ -156,3 +156,15 @@ class NotificationService:
                 print("[NotificationService] Email send error:", e)
 
         Thread(target=_send, daemon=True).start()
+import resend
+import os
+
+resend.api_key = os.getenv("RESEND_API_KEY")
+
+def send_html_email(subject, html_content, recipient):
+    resend.Emails.send({
+        "from": os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@resend.dev>"),
+        "to": [recipient],
+        "subject": subject,
+        "html": html_content,
+    })
