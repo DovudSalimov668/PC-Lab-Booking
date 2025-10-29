@@ -143,16 +143,17 @@ X_FRAME_OPTIONS = 'DENY'
 # ==========================
 # Email / Resend setup
 # ==========================
-# Do NOT use Gmail SMTP here — Render blocks SMTP ports.
-# We use HTTPS-based Resend API instead.
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@yourdomain.com")
+# ✅ Works fully on Render without custom domain.
+# ✅ Uses Resend SMTP (port 587) — HTTPS-based.
 
-# Disable Django's SMTP backend in production
-if os.getenv("DJANGO_DEVELOPMENT") == "1":
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-else:
-    EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend"
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.resend.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "apikey")  # always "apikey" for Resend
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")     # your Resend API key
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@resend.dev>")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", EMAIL_HOST_PASSWORD)  # fallback support
 
 # ==========================
 # Authentication redirects
