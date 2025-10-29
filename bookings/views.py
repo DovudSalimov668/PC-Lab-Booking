@@ -440,150 +440,103 @@ class BookingDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "booking"
 
     def post(self, request, *args, **kwargs):
-        """
-        Handle all booking actions with full notification logic.
-        Admins can override any status; users can cancel their own active bookings.
-        """
         booking = self.get_object()
-        user = request.user
         action = request.POST.get("action")
         admin_notes = request.POST.get("admin_notes", "").strip()
+        user = request.user
 
         if not action:
-            messages.error(request, "No action specified.")
+            messages.error(request, "No action specified")
             return redirect("booking_detail", pk=booking.pk)
 
-        # Determine privileges
-        is_admin = user.is_superuser or user_can_approve(user)
+        is_admin = user.is_superuser or user.role in ["program_admin", "lab_technician", "it_support", "manager"]
         is_owner = user == booking.requester
 
-        # -----------------------------
-        # 1️⃣ CANCEL
-        # -----------------------------
         if action == "cancel":
             if not (is_owner or is_admin):
-                messages.error(request, "You don't have permission to cancel this booking.")
+                messages.error(request, "Permission denied.")
                 return redirect("booking_detail", pk=booking.pk)
-
-            if not is_admin and booking.status in ["cancelled", "completed"]:
-                messages.error(request, f"Cannot cancel a {booking.status} booking.")
-                return redirect("booking_detail", pk=booking.pk)
-
             booking.status = "cancelled"
             booking.save(update_fields=["status"])
-            messages.success(request, "Booking cancelled successfully.")
+            messages.success(request, "Booking cancelled.")
+            try:
+                if user != booking.requester:
+                    NotificationService.notify_booking_cancelled(booking, user)
+            except Exception:
+                pass
+            return redirect("booking_detail", pk=booking.pk)
 
-            # 🔔 Notify
-            if is_admin:
-                NotificationService.notify_booking_cancelled(booking, user)
-            elif is_owner:
-                # Owner cancelled their own booking -> notify admins
-                NotificationService.notify_booking_created(booking)
-
-            return redirect("booking_list")
-
-        # -----------------------------
-        # 2️⃣ APPROVE
-        # -----------------------------
         if action == "approve":
             if not is_admin:
-                messages.error(request, "You do not have permission to approve bookings.")
+                messages.error(request, "Permission denied.")
                 return redirect("booking_detail", pk=booking.pk)
-
             booking.status = "approved"
             booking.approved_by = user
             if admin_notes:
                 booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "approved_by", "admin_notes"])
-            messages.success(request, "Booking approved successfully.")
-
-            # 🔔 Notify requester
-            NotificationService.notify_booking_approved(booking, user)
+            try:
+                NotificationService.notify_booking_approved(booking, user)
+            except Exception:
+                pass
+            messages.success(request, "Booking approved.")
             return redirect("booking_detail", pk=booking.pk)
 
-        # -----------------------------
-        # 3️⃣ REJECT
-        # -----------------------------
         if action == "reject":
             if not is_admin:
-                messages.error(request, "You do not have permission to reject bookings.")
+                messages.error(request, "Permission denied.")
                 return redirect("booking_detail", pk=booking.pk)
-
             if not admin_notes:
-                messages.error(request, "Reason for rejection is required.")
+                messages.error(request, "Please add reason.")
                 return redirect("booking_detail", pk=booking.pk)
-
             booking.status = "rejected"
             booking.approved_by = user
             booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "approved_by", "admin_notes"])
-            messages.warning(request, "Booking rejected.")
-
-            # 🔔 Notify requester
-            NotificationService.notify_booking_rejected(booking, user)
+            try:
+                NotificationService.notify_booking_rejected(booking, user)
+            except Exception:
+                pass
+            messages.success(request, "Booking rejected.")
             return redirect("booking_detail", pk=booking.pk)
 
-        # -----------------------------
-        # 4️⃣ COMPLETE
-        # -----------------------------
         if action == "complete":
             if not is_admin:
-                messages.error(request, "You do not have permission to mark bookings as complete.")
+                messages.error(request, "Permission denied.")
                 return redirect("booking_detail", pk=booking.pk)
-
             booking.status = "completed"
             if admin_notes:
                 booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "admin_notes"])
-            messages.success(request, "Booking marked as complete.")
-
-            # 🔔 Notify requester
-            NotificationService.create_notification(
-                recipient=booking.requester,
-                title=f"Booking Completed: {booking.lab.name}",
-                message=(
-                    f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
-                    f"has been marked as completed."
-                ),
-                link=f"/bookings/{booking.id}/",
-                sender=user,
-                notification_type="booking_completed",
-            )
+            try:
+                NotificationService.create_notification(
+                    recipient=booking.requester,
+                    title=f"Booking #{booking.id} completed",
+                    message=f"Booking for {booking.lab.name} on {booking.start} completed.",
+                    link=booking.get_absolute_url(),
+                    sender=user,
+                    notification_type="booking_completed",
+                )
+            except Exception:
+                pass
+            messages.success(request, "Booking marked complete.")
             return redirect("booking_detail", pk=booking.pk)
 
-        # -----------------------------
-        # 5️⃣ REOPEN
-        # -----------------------------
         if action == "reopen":
             if not is_admin:
-                messages.error(request, "You do not have permission to reopen bookings.")
+                messages.error(request, "Permission denied.")
                 return redirect("booking_detail", pk=booking.pk)
-
             booking.status = "pending"
             booking.approved_by = None
             if admin_notes:
                 booking.admin_notes = admin_notes
             booking.save(update_fields=["status", "approved_by", "admin_notes"])
-            messages.success(request, "Booking reopened and set to pending.")
-
-            # 🔔 Notify requester
-            NotificationService.create_notification(
-                recipient=booking.requester,
-                title=f"Booking Reopened: {booking.lab.name}",
-                message=(
-                    f"Your booking for {booking.lab.name} has been reopened and is now pending review again."
-                ),
-                link=f"/bookings/{booking.id}/",
-                sender=user,
-                notification_type="booking_reopened",
-            )
+            messages.success(request, "Booking reopened.")
             return redirect("booking_detail", pk=booking.pk)
 
-        # -----------------------------
-        # Invalid Action
-        # -----------------------------
         messages.error(request, "Invalid action.")
         return redirect("booking_detail", pk=booking.pk)
+
 
     # ----------------------------------------------------------------
     # Context data for template

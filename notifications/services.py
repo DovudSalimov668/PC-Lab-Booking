@@ -1,5 +1,6 @@
 # notifications/services.py
-from django.core.mail import send_mail
+import os
+import requests
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -12,7 +13,7 @@ class NotificationService:
     """Handles creation and email delivery of notifications."""
 
     # -----------------------------
-    # 1️⃣ Base notification creator
+    # 1️⃣ Create and optionally send email
     # -----------------------------
     @staticmethod
     def create_notification(
@@ -25,9 +26,6 @@ class NotificationService:
         notification_type="general",
         send_email=True
     ):
-        """
-        Create a notification record and optionally send an email.
-        """
         notif = Notification.objects.create(
             recipient=recipient,
             sender=sender,
@@ -40,13 +38,12 @@ class NotificationService:
             is_read=False,
         )
 
-        # Email sending
         if send_email:
             if recipient and recipient.email:
                 NotificationService._send_email_async(
                     subject=f"[PC Lab Booking] {title}",
                     message=message,
-                    recipient_list=[recipient.email],
+                    recipient_email=recipient.email,
                 )
             elif target_role:
                 users = User.objects.filter(role=target_role, is_active=True)
@@ -55,8 +52,9 @@ class NotificationService:
                         NotificationService._send_email_async(
                             subject=f"[PC Lab Booking] {title}",
                             message=message,
-                            recipient_list=[user.email],
+                            recipient_email=user.email,
                         )
+
         return notif
 
     # -----------------------------
@@ -121,20 +119,39 @@ class NotificationService:
         )
 
     # -----------------------------
-    # 3️⃣ Async Email Helper
+    # 3️⃣ Async email helper using Resend
     # -----------------------------
     @staticmethod
-    def _send_email_async(subject, message, recipient_list):
-        """Send email in a background thread (non-blocking)."""
+    def _send_email_async(subject, message, recipient_email):
+        """Send an email using Resend API in background thread."""
         def _send():
             try:
-                send_mail(
-                    subject,
-                    message,
-                    getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@pclab.com"),
-                    recipient_list,
-                    fail_silently=False,
+                api_key = os.getenv("RESEND_API_KEY")
+                if not api_key:
+                    print("[NotificationService] Missing RESEND_API_KEY")
+                    return
+
+                sender = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@yourdomain.com")
+                data = {
+                    "from": sender,
+                    "to": [recipient_email],
+                    "subject": subject,
+                    "text": message,
+                }
+
+                response = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=data,
+                    timeout=10,
                 )
+
+                if response.status_code not in (200, 201):
+                    print(f"[Resend] Failed to send email: {response.text}")
+
             except Exception as e:
                 print("[NotificationService] Email send error:", e)
 

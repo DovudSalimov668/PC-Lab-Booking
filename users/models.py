@@ -95,6 +95,7 @@ class EmailOTP(models.Model):
     is_used = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)  # verification attempts
 
     def is_expired(self):
         return timezone.now() > self.expires_at
