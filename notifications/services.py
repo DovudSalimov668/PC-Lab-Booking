@@ -1,8 +1,7 @@
 # notifications/services.py
-import os
-import requests
+
+from django.core.mail import send_mail
 from django.conf import settings
-from django.template.loader import render_to_string
 from django.utils import timezone
 from threading import Thread
 from users.models import User
@@ -13,7 +12,7 @@ class NotificationService:
     """Handles creation and email delivery of notifications."""
 
     # -----------------------------
-    # 1️⃣ Create and optionally send email
+    # 1️⃣ Create notification and optionally send email
     # -----------------------------
     @staticmethod
     def create_notification(
@@ -26,6 +25,9 @@ class NotificationService:
         notification_type="general",
         send_email=True
     ):
+        """
+        Creates a notification record and optionally sends an email via Brevo SMTP.
+        """
         notif = Notification.objects.create(
             recipient=recipient,
             sender=sender,
@@ -43,7 +45,7 @@ class NotificationService:
                 NotificationService._send_email_async(
                     subject=f"[PC Lab Booking] {title}",
                     message=message,
-                    recipient_email=recipient.email,
+                    recipient_list=[recipient.email],
                 )
             elif target_role:
                 users = User.objects.filter(role=target_role, is_active=True)
@@ -52,7 +54,7 @@ class NotificationService:
                         NotificationService._send_email_async(
                             subject=f"[PC Lab Booking] {title}",
                             message=message,
-                            recipient_email=user.email,
+                            recipient_list=[user.email],
                         )
 
         return notif
@@ -62,6 +64,7 @@ class NotificationService:
     # -----------------------------
     @staticmethod
     def notify_booking_created(booking):
+        """Notify all program admins when a new booking is created."""
         admins = User.objects.filter(role="program_admin", is_active=True)
         for admin in admins:
             NotificationService.create_notification(
@@ -78,6 +81,7 @@ class NotificationService:
 
     @staticmethod
     def notify_booking_approved(booking, approver):
+        """Notify requester when their booking is approved."""
         NotificationService.create_notification(
             recipient=booking.requester,
             title=f"Booking Approved: {booking.lab.name}",
@@ -92,6 +96,7 @@ class NotificationService:
 
     @staticmethod
     def notify_booking_rejected(booking, approver):
+        """Notify requester when their booking is rejected."""
         NotificationService.create_notification(
             recipient=booking.requester,
             title=f"Booking Rejected: {booking.lab.name}",
@@ -106,6 +111,7 @@ class NotificationService:
 
     @staticmethod
     def notify_booking_cancelled(booking, actor):
+        """Notify requester when their booking is cancelled."""
         NotificationService.create_notification(
             recipient=booking.requester,
             title=f"Booking Cancelled: {booking.lab.name}",
@@ -119,52 +125,22 @@ class NotificationService:
         )
 
     # -----------------------------
-    # 3️⃣ Async email helper using Resend
+    # 3️⃣ Async email sending (works with Brevo SMTP)
     # -----------------------------
     @staticmethod
-    def _send_email_async(subject, message, recipient_email):
-        """Send an email using Resend API in background thread."""
+    def _send_email_async(subject, message, recipient_list):
+        """Send email using Django’s SMTP setup in a background thread."""
         def _send():
             try:
-                api_key = os.getenv("RESEND_API_KEY")
-                if not api_key:
-                    print("[NotificationService] Missing RESEND_API_KEY")
-                    return
-
-                sender = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@yourdomain.com")
-                data = {
-                    "from": sender,
-                    "to": [recipient_email],
-                    "subject": subject,
-                    "text": message,
-                }
-
-                response = requests.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=data,
-                    timeout=10,
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=recipient_list,
+                    fail_silently=False,
                 )
-
-                if response.status_code not in (200, 201):
-                    print(f"[Resend] Failed to send email: {response.text}")
-
+                print(f"[NotificationService] Email sent to: {recipient_list}")
             except Exception as e:
                 print("[NotificationService] Email send error:", e)
 
         Thread(target=_send, daemon=True).start()
-import resend
-import os
-
-resend.api_key = os.getenv("RESEND_API_KEY")
-
-def send_html_email(subject, html_content, recipient):
-    resend.Emails.send({
-        "from": os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@resend.dev>"),
-        "to": [recipient],
-        "subject": subject,
-        "html": html_content,
-    })
