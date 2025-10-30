@@ -194,6 +194,59 @@ def verify_email(request):
         'purpose': purpose,
     })
 
+# ==========================================================
+# ============= VERIFY LOGIN OTP (Login step 2) ============
+# ==========================================================
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.utils import timezone
+from django.contrib.auth import login as django_login
+from .models import User, EmailOTP
+
+def verify_login_otp(request):
+    """Verify OTP during login (sent by email)."""
+    pending_email = request.session.get('pending_email')
+    if not pending_email:
+        messages.error(request, "Session expired. Please log in again.")
+        return redirect('login')
+
+    if request.method == 'POST':
+        otp_code = request.POST.get('otp_code')
+
+        try:
+            user = User.objects.get(email=pending_email)
+        except User.DoesNotExist:
+            messages.error(request, "User not found.")
+            return redirect('login')
+
+        otp_entry = EmailOTP.objects.filter(
+            user=user, otp_code=otp_code, purpose='login', is_used=False
+        ).order_by('-created_at').first()
+
+        if not otp_entry:
+            messages.error(request, "Invalid OTP.")
+            return redirect('verify_login_otp')
+
+        if otp_entry.is_expired():
+            otp_entry.is_used = True
+            otp_entry.save()
+            messages.error(request, "OTP expired. Please request a new one.")
+            request.session.pop('pending_email', None)
+            return redirect('login')
+
+        # OTP is valid
+        otp_entry.is_used = True
+        otp_entry.save()
+
+        django_login(request, user)
+        request.session.pop('pending_email', None)
+
+        messages.success(request, f"Welcome back, {user.username}!")
+        return redirect('dashboard_redirect')
+
+    return render(request, 'users/verify_login_otp.html', {
+        'email': pending_email,
+    })
 
 # ==========================================================
 # ================= DASHBOARD REDIRECT =====================
