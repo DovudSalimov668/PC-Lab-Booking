@@ -1,53 +1,30 @@
-import threading
+# users/views.py
+import os
 from datetime import timedelta
 from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as django_login, logout
 from django.http import JsonResponse
-from django.conf import settings
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 
 from .models import User, EmailOTP
-from .forms import RegistrationForm, OTPVerificationForm
+from .forms import RegistrationForm
 from .mixins import (
     StudentRequiredMixin, LecturerRequiredMixin, ProgrammeAdminRequiredMixin,
-    LabTechnicianRequiredMixin, ITSupportRequiredMixin, ManagerRequiredMixin
+    LabTechnicianRequiredMixin, ITSupportRequiredMixin, ManagerRequiredMixin,
 )
 from notifications.models import Notification
-from notifications.email import send_simple_email   # ✅ use Brevo email helper
+from notifications.email import send_email_async
 
-
-# ==========================================================
-# ================ EMAIL SYSTEM (BREVO SMTP) ===============
-# ==========================================================
-
-def send_brevo_email(subject, message, recipient, template_name=None, context=None):
-    """
-    Sends an email using Django’s SMTP backend (configured for Brevo).
-    This uses notifications/email.py helper for async sending.
-    """
-    try:
-        send_simple_email(
-            subject=subject,
-            message=message,
-            recipient_email=recipient,
-            template_name=template_name,
-            context=context or {}
-        )
-    except Exception as e:
-        print("[Brevo Email Error]", e)
-
-
-# ==========================================================
-# ====================== REGISTER ==========================
-# ==========================================================
-
+# =====================================================
+# Register user + send OTP
+# =====================================================
 def register(request):
-    if request.method == 'POST':
+    if request.method == "POST":
         form = RegistrationForm(request.POST)
         if form.is_valid():
             user = form.save(commit=False)
@@ -58,219 +35,92 @@ def register(request):
             EmailOTP.objects.create(
                 user=user,
                 otp_code=otp,
-                purpose='registration',
-                expires_at=timezone.now() + timedelta(minutes=5)
+                purpose="registration",
+                expires_at=timezone.now() + timedelta(minutes=5),
             )
 
-            send_brevo_email(
+            send_email_async(
                 subject="Your OTP Code – PC Lab Booking",
-                message=f"Your verification code is: {otp}\nThis code expires in 5 minutes.",
-                recipient=user.email,
-                template_name="emails/otp_email.html",
-                context={"otp_code": otp, "user": user}
+                html=f"<p>Your verification code is: <strong>{otp}</strong></p><p>This code expires in 5 minutes.</p>",
+                text=f"Your verification code is {otp}. This code expires in 5 minutes.",
+                recipients=[user.email],
             )
 
-            messages.info(request, "An OTP has been sent to your email for verification.")
-            request.session['pending_email'] = user.email
-            request.session['otp_purpose'] = 'registration'
-            return redirect('verify_email')
+            messages.info(request, "An OTP has been sent to your email.")
+            request.session["pending_email"] = user.email
+            request.session["otp_purpose"] = "registration"
+            return redirect("verify_email")
     else:
         form = RegistrationForm()
-    return render(request, 'users/register.html', {'form': form})
+    return render(request, "users/register.html", {"form": form})
 
 
-# ==========================================================
-# =================== LOGIN WITH OTP =======================
-# ==========================================================
-
+# =====================================================
+# Login + OTP
+# =====================================================
 def login_with_otp(request):
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        password = request.POST.get('password')
-
+    if request.method == "POST":
+        email = request.POST.get("email")
+        password = request.POST.get("password")
         user = authenticate(request, email=email, password=password)
         if not user:
-            messages.error(request, "Invalid email or password.")
-            return render(request, 'users/login.html')
+            messages.error(request, "Invalid credentials.")
+            return render(request, "users/login.html")
 
         otp = EmailOTP.generate_otp()
         EmailOTP.objects.create(
             user=user,
             otp_code=otp,
-            purpose='login',
-            expires_at=timezone.now() + timedelta(minutes=5)
+            purpose="login",
+            expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        send_brevo_email(
+        send_email_async(
             subject="Your Login OTP – PC Lab Booking",
-            message=f"Your login OTP is: {otp}\nThis code expires in 5 minutes.",
-            recipient=user.email,
-            template_name="emails/otp_email.html",
-            context={"otp_code": otp, "user": user}
+            html=f"<p>Your login OTP is: <strong>{otp}</strong></p><p>Expires in 5 minutes.</p>",
+            text=f"Your login OTP is {otp}. Expires in 5 minutes.",
+            recipients=[user.email],
         )
 
-        request.session['pending_email'] = user.email
-        request.session['otp_purpose'] = 'login'
-        messages.info(request, "A verification code was sent to your email.")
-        return redirect('verify_email')
-    return render(request, 'users/login.html')
+        request.session["pending_email"] = user.email
+        request.session["otp_purpose"] = "login"
+        messages.info(request, "OTP sent to your email.")
+        return redirect("verify_email")
+    return render(request, "users/login.html")
 
 
-# ==========================================================
-# ================= VERIFY LOGIN OTP =======================
-# ==========================================================
-
-def verify_login_otp(request):
-    pending_email = request.session.get('pending_email')
-
-    if not pending_email:
-        messages.error(request, "Session expired. Please login again.")
-        return redirect('login')
-
-    if request.method == 'POST':
-        otp_code = request.POST.get('otp_code')
-
-        try:
-            user = User.objects.get(email=pending_email)
-        except User.DoesNotExist:
-            messages.error(request, "User not found.")
-            return redirect('login')
-
-        otp_entry = EmailOTP.objects.filter(
-            user=user, otp_code=otp_code, purpose='login', is_used=False
-        ).order_by('-created_at').first()
-
-        if not otp_entry:
-            messages.error(request, "Invalid OTP.")
-            return redirect('verify_email')
-
-        if otp_entry.is_expired():
-            otp_entry.is_used = True
-            otp_entry.save()
-            messages.error(request, "OTP expired. Please login again.")
-            return redirect('login')
-
-        otp_entry.is_used = True
-        otp_entry.save()
-        django_login(request, user)
-        request.session.pop('pending_email', None)
-
-        messages.success(request, f"Welcome back, {user.username}!")
-        return redirect('dashboard_redirect')
-
-    return render(request, 'users/verify_email.html', {
-        'email': pending_email,
-        'purpose': 'login'
-    })
-
-
-# ==========================================================
-# =================== VERIFY EMAIL OTP =====================
-# ==========================================================
-
-def verify_email(request):
-    pending_email = request.session.get('pending_email')
-    purpose = request.session.get('otp_purpose', 'registration')
-
-    if not pending_email:
-        messages.error(request, "Session expired. Please log in or register again.")
-        return redirect('login')
-
-    if request.method == 'POST':
-        otp_code = request.POST.get('otp_code')
-        try:
-            user = User.objects.get(email=pending_email)
-        except User.DoesNotExist:
-            messages.error(request, "User not found.")
-            return redirect('login')
-
-        otp_entry = EmailOTP.objects.filter(
-            user=user, otp_code=otp_code, purpose=purpose, is_used=False
-        ).order_by('-created_at').first()
-
-        if not otp_entry:
-            messages.error(request, "Invalid OTP.")
-            return redirect('verify_email')
-
-        if otp_entry.is_expired():
-            otp_entry.is_used = True
-            otp_entry.save()
-            messages.error(request, "OTP expired. Please try again.")
-            request.session.pop('pending_email', None)
-            request.session.pop('otp_purpose', None)
-            return redirect('login')
-
-        otp_entry.is_used = True
-        otp_entry.save()
-
-        if purpose == 'registration':
-            user.is_active = True
-            user.is_verified = True
-            user.save()
-
-        django_login(request, user)
-        request.session.pop('pending_email', None)
-        request.session.pop('otp_purpose', None)
-
-        messages.success(request, f"Welcome, {user.username}!")
-        return redirect('dashboard_redirect')
-
-    return render(request, 'users/verify_email.html', {'email': pending_email, 'purpose': purpose})
-
-
-# ==========================================================
-# ===================== RESEND OTP ==========================
-# ==========================================================
-
+# =====================================================
+# Resend OTP
+# =====================================================
 def resend_otp(request):
-    email = request.session.get('pending_email')
-    purpose = request.session.get('otp_purpose')
+    email = request.session.get("pending_email")
+    purpose = request.session.get("otp_purpose")
 
     if not email or not purpose:
-        return JsonResponse({'success': False, 'error': 'Session expired. Please login or register again.'}, status=400)
+        return JsonResponse({"success": False, "error": "Session expired."}, status=400)
 
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'User not found.'}, status=404)
+        return JsonResponse({"success": False, "error": "User not found."}, status=404)
 
     otp = EmailOTP.generate_otp()
     EmailOTP.objects.create(
         user=user,
         otp_code=otp,
         purpose=purpose,
-        expires_at=timezone.now() + timedelta(minutes=5)
+        expires_at=timezone.now() + timedelta(minutes=5),
     )
 
-    send_brevo_email(
+    send_email_async(
         subject="Your New OTP Code – PC Lab Booking",
-        message=f"Your new verification code is: {otp}\nThis code expires in 5 minutes.",
-        recipient=user.email,
-        template_name="emails/otp_email.html",
-        context={"otp_code": otp, "user": user}
+        html=f"<p>Your new OTP code is: <strong>{otp}</strong></p><p>Expires in 5 minutes.</p>",
+        text=f"Your new OTP code is {otp}. Expires in 5 minutes.",
+        recipients=[user.email],
     )
 
-    return JsonResponse({'success': True, 'message': 'A new OTP has been sent to your email.'})
+    return JsonResponse({"success": True, "message": "A new OTP has been sent."})
 
-
-# ==========================================================
-# ================= DASHBOARD REDIRECT =====================
-# ==========================================================
-
-def dashboard_redirect(request):
-    if not request.user.is_authenticated:
-        return redirect('login_with_otp')
-
-    user = request.user
-    role_redirects = {
-        "student": 'student_dashboard',
-        "lecturer": 'lecturer_dashboard',
-        "program_admin": 'program_admin_dashboard',
-        "lab_technician": 'lab_technician_dashboard',
-        "it_support": 'it_support_dashboard',
-        "manager": 'manager_dashboard'
-    }
-    return redirect(role_redirects.get(user.role, '/'))
 
 
 # ==========================================================

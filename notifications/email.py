@@ -1,49 +1,87 @@
 # notifications/email.py
-"""
-Email helper utilities (SMTP version).
-
-Uses Django's configured EMAIL_BACKEND (e.g. Brevo, SendGrid, etc.).
-"""
-
+import os
 import logging
-from django.core.mail import send_mail, EmailMultiAlternatives
-from django.conf import settings
-from django.template.loader import render_to_string
+import requests
 from threading import Thread
+from typing import List, Optional
+
+from django.conf import settings
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
 
-def _send_async(email_obj):
-    """Send email in a background thread (non-blocking)."""
-    def _send():
-        try:
-            email_obj.send(fail_silently=False)
-            logger.info(f"Email sent successfully to: {email_obj.to}")
-        except Exception as e:
-            logger.exception(f"Email send failed: {e}")
-    Thread(target=_send, daemon=True).start()
+BREVO_API_KEY = os.getenv("BREVO_API_KEY") or getattr(settings, "BREVO_API_KEY", None)
+DEFAULT_FROM = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@example.com")
+BREVO_SEND_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
-def send_simple_email(subject, message, recipient_email, template_name=None, context=None):
-    """
-    Sends an email using the configured Django email backend.
-    If template_name is provided, renders HTML and attaches it.
-    """
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@pclab.app>")
+def _send_via_brevo_http(subject: str, html: str, text: str, recipients: List[str], from_email: Optional[str] = None):
+    """Send using Brevo HTTP API (safe on Render)."""
+    if not BREVO_API_KEY:
+        return False, "Missing BREVO_API_KEY"
 
-    # prepare plain text and html body
-    if template_name:
-        html_body = render_to_string(template_name, context or {})
-    else:
-        html_body = f"<p>{message}</p>"
+    payload = {
+        "sender": {"name": None, "email": from_email or DEFAULT_FROM},
+        "to": [{"email": r} for r in recipients],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+    }
 
-    email = EmailMultiAlternatives(
-        subject=subject,
-        body=message,
-        from_email=from_email,
-        to=[recipient_email],
-    )
-    email.attach_alternative(html_body, "text/html")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "api-key": BREVO_API_KEY,
+    }
 
-    _send_async(email)
-    return True
+    try:
+        resp = requests.post(BREVO_SEND_ENDPOINT, headers=headers, json=payload, timeout=10)
+        if resp.status_code // 100 != 2:
+            logger.error("[Brevo HTTP] %s %s", resp.status_code, resp.text)
+            return False, resp.text
+        logger.info("[Brevo HTTP] Email sent to %s", recipients)
+        return True, None
+    except Exception as e:
+        logger.exception("[Brevo HTTP] Exception: %s", e)
+        return False, str(e)
+
+
+def _send_via_smtp(subject: str, html: str, text: str, recipients: List[str], from_email: Optional[str] = None):
+    """Send via Django SMTP backend."""
+    try:
+        email = EmailMessage(
+            subject=subject,
+            body=html,
+            from_email=from_email or DEFAULT_FROM,
+            to=recipients,
+        )
+        email.content_subtype = "html"
+        email.send(fail_silently=False)
+        logger.info("[SMTP] Sent to %s", recipients)
+        return True, None
+    except Exception as e:
+        logger.exception("[SMTP] Exception: %s", e)
+        return False, str(e)
+
+
+def send_email_async(subject: str, html: str, text: str, recipients: List[str], from_email: Optional[str] = None):
+    """Public async helper – prefers HTTP API, falls back to SMTP."""
+    def worker():
+        if BREVO_API_KEY:
+            ok, err = _send_via_brevo_http(subject, html, text, recipients, from_email)
+            if ok:
+                return
+            logger.warning("[Email] Brevo HTTP failed, trying SMTP fallback: %s", err)
+        ok, err = _send_via_smtp(subject, html, text, recipients, from_email)
+        if not ok:
+            logger.error("[Email] Both HTTP and SMTP failed: %s", err)
+
+    Thread(target=worker, daemon=True).start()
+
+
+def send_template_email(subject: str, template_html: str, context: dict, recipients: List[str], from_email: Optional[str] = None):
+    """Render template and send asynchronously."""
+    html = render_to_string(template_html, context or {})
+    text = context.get("plain_text", "PC Lab Booking notification.")
+    send_email_async(subject, html, text, recipients, from_email)
