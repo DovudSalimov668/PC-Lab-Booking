@@ -132,6 +132,67 @@ def logout_view(request):
     messages.success(request, "You have been logged out successfully.")
     return redirect('login')
 
+# ==========================================================
+# ================= VERIFY EMAIL OTP =======================
+# ==========================================================
+from django.contrib import messages
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from .models import User, EmailOTP
+from django.contrib.auth import login as django_login
+
+def verify_email(request):
+    """Handle OTP verification for registration."""
+    pending_email = request.session.get('pending_email')
+    purpose = request.session.get('otp_purpose', 'registration')
+
+    if not pending_email:
+        messages.error(request, "Session expired. Please log in or register again.")
+        return redirect('login')
+
+    if request.method == 'POST':
+        otp_code = request.POST.get('otp_code')
+        try:
+            user = User.objects.get(email=pending_email)
+        except User.DoesNotExist:
+            messages.error(request, "User not found.")
+            return redirect('login')
+
+        otp_entry = EmailOTP.objects.filter(
+            user=user, otp_code=otp_code, purpose=purpose, is_used=False
+        ).order_by('-created_at').first()
+
+        if not otp_entry:
+            messages.error(request, "Invalid OTP.")
+            return redirect('verify_email')
+
+        if otp_entry.is_expired():
+            otp_entry.is_used = True
+            otp_entry.save()
+            messages.error(request, "OTP expired. Please try again.")
+            request.session.pop('pending_email', None)
+            request.session.pop('otp_purpose', None)
+            return redirect('login')
+
+        otp_entry.is_used = True
+        otp_entry.save()
+
+        if purpose == 'registration':
+            user.is_active = True
+            user.is_verified = True
+            user.save()
+
+        django_login(request, user)
+        request.session.pop('pending_email', None)
+        request.session.pop('otp_purpose', None)
+
+        messages.success(request, f"Welcome, {user.username}!")
+        return redirect('dashboard_redirect')
+
+    return render(request, 'users/verify_email.html', {
+        'email': pending_email,
+        'purpose': purpose,
+    })
 
 
 # ==========================================================
