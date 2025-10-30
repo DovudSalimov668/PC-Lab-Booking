@@ -1,4 +1,3 @@
-# users/views.py
 import os
 from datetime import timedelta
 from django.shortcuts import render, redirect
@@ -18,11 +17,9 @@ from .mixins import (
     LabTechnicianRequiredMixin, ITSupportRequiredMixin, ManagerRequiredMixin,
 )
 from notifications.models import Notification
-from notifications.email import send_email_async
-from notifications.email import send_simple_email_async
 
 # =====================================================
-# Register user + send OTP
+# Register user + send OTP (WITH FALLBACK)
 # =====================================================
 def register(request):
     if request.method == "POST":
@@ -40,30 +37,32 @@ def register(request):
                 expires_at=timezone.now() + timedelta(minutes=5),
             )
 
-            # ADD FALLBACK FOR DEVELOPMENT
+            # Try to send email with fallback
+            email_sent = False
             try:
-                send_email_async(
+                from notifications.email import send_simple_email_async
+                send_simple_email_async(
                     subject="Your OTP Code – PC Lab Booking",
-                    html=f"<p>Your verification code is: <strong>{otp}</strong></p><p>This code expires in 5 minutes.</p>",
-                    text=f"Your verification code is {otp}. This code expires in 5 minutes.",
-                    recipients=[user.email],
+                    message=f"Your verification code is: <div class='otp'>{otp}</div>This code expires in 5 minutes.",
+                    recipient_email=user.email
                 )
+                email_sent = True
                 messages.info(request, "An OTP has been sent to your email.")
             except Exception as e:
-                # FALLBACK: Show OTP on screen for development
-                messages.warning(request, f"Email service temporarily unavailable. Your OTP is: {otp}")
-                print(f"OTP for {user.email}: {otp}")  # Also log to console
+                # FALLBACK: Show OTP on screen
+                messages.warning(request, f"Email service configuring. Your OTP is: <strong>{otp}</strong>")
+                print(f"🚨 OTP for {user.email}: {otp}")  # Log for debugging
 
             request.session["pending_email"] = user.email
             request.session["otp_purpose"] = "registration"
+            request.session["otp_code"] = otp  # Store for fallback
             return redirect("verify_email")
     else:
         form = RegistrationForm()
     return render(request, "users/register.html", {"form": form})
 
-
 # =====================================================
-# Login + OTP
+# Login + OTP (WITH FALLBACK)
 # =====================================================
 def login_with_otp(request):
     if request.method == "POST":
@@ -82,22 +81,28 @@ def login_with_otp(request):
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        send_email_async(
-            subject="Your Login OTP – PC Lab Booking",
-            html=f"<p>Your login OTP is: <strong>{otp}</strong></p><p>Expires in 5 minutes.</p>",
-            text=f"Your login OTP is {otp}. Expires in 5 minutes.",
-            recipients=[user.email],
-        )
+        # Try to send email with fallback
+        try:
+            from notifications.email import send_simple_email_async
+            send_simple_email_async(
+                subject="Your Login OTP – PC Lab Booking",
+                message=f"Your login OTP is: <div class='otp'>{otp}</div>Expires in 5 minutes.",
+                recipient_email=user.email
+            )
+            messages.info(request, "OTP sent to your email.")
+        except Exception as e:
+            # FALLBACK: Show OTP on screen
+            messages.warning(request, f"Email service configuring. Your OTP is: <strong>{otp}</strong>")
+            print(f"🚨 Login OTP for {user.email}: {otp}")
 
         request.session["pending_email"] = user.email
         request.session["otp_purpose"] = "login"
-        messages.info(request, "OTP sent to your email.")
+        request.session["otp_code"] = otp  # Store for fallback
         return redirect("verify_email")
     return render(request, "users/login.html")
 
-
 # =====================================================
-# Resend OTP
+# Resend OTP (WITH FALLBACK)
 # =====================================================
 def resend_otp(request):
     email = request.session.get("pending_email")
@@ -119,39 +124,31 @@ def resend_otp(request):
         expires_at=timezone.now() + timedelta(minutes=5),
     )
 
-    send_email_async(
-        subject="Your New OTP Code – PC Lab Booking",
-        html=f"<p>Your new OTP code is: <strong>{otp}</strong></p><p>Expires in 5 minutes.</p>",
-        text=f"Your new OTP code is {otp}. Expires in 5 minutes.",
-        recipients=[user.email],
-    )
-
-    return JsonResponse({"success": True, "message": "A new OTP has been sent."})
-
-
-
-# ==========================================================
-# ======================= LOGOUT ===========================
-# ==========================================================
-
-def logout_view(request):
-    logout(request)
-    messages.success(request, "You have been logged out successfully.")
-    return redirect('login')
+    # Try to send email with fallback
+    try:
+        from notifications.email import send_simple_email_async
+        send_simple_email_async(
+            subject="Your New OTP Code – PC Lab Booking",
+            message=f"Your new OTP code is: <div class='otp'>{otp}</div>Expires in 5 minutes.",
+            recipient_email=user.email
+        )
+        return JsonResponse({"success": True, "message": "A new OTP has been sent."})
+    except Exception as e:
+        # Fallback response
+        return JsonResponse({
+            "success": True, 
+            "message": f"Email service configuring. Your new OTP is: {otp}",
+            "otp_fallback": otp
+        })
 
 # ==========================================================
 # ================= VERIFY EMAIL OTP =======================
 # ==========================================================
-from django.contrib import messages
-from django.shortcuts import redirect, render
-from django.utils import timezone
-from .models import User, EmailOTP
-from django.contrib.auth import login as django_login
-
 def verify_email(request):
     """Handle OTP verification for registration."""
     pending_email = request.session.get('pending_email')
     purpose = request.session.get('otp_purpose', 'registration')
+    fallback_otp = request.session.get('otp_code')
 
     if not pending_email:
         messages.error(request, "Session expired. Please log in or register again.")
@@ -165,10 +162,22 @@ def verify_email(request):
             messages.error(request, "User not found.")
             return redirect('login')
 
+        # Check OTP in database first
         otp_entry = EmailOTP.objects.filter(
             user=user, otp_code=otp_code, purpose=purpose, is_used=False
         ).order_by('-created_at').first()
 
+        # Fallback: check session OTP if database OTP not found
+        if not otp_entry and fallback_otp and otp_code == fallback_otp:
+            # Create a temporary OTP entry for fallback
+            otp_entry = EmailOTP.objects.create(
+                user=user,
+                otp_code=fallback_otp,
+                purpose=purpose,
+                expires_at=timezone.now() + timedelta(minutes=5),
+                is_used=True
+            )
+        
         if not otp_entry:
             messages.error(request, "Invalid OTP.")
             return redirect('verify_email')
@@ -179,6 +188,7 @@ def verify_email(request):
             messages.error(request, "OTP expired. Please try again.")
             request.session.pop('pending_email', None)
             request.session.pop('otp_purpose', None)
+            request.session.pop('otp_code', None)
             return redirect('login')
 
         otp_entry.is_used = True
@@ -192,6 +202,7 @@ def verify_email(request):
         django_login(request, user)
         request.session.pop('pending_email', None)
         request.session.pop('otp_purpose', None)
+        request.session.pop('otp_code', None)
 
         messages.success(request, f"Welcome, {user.username}!")
         return redirect('dashboard_redirect')
@@ -202,63 +213,16 @@ def verify_email(request):
     })
 
 # ==========================================================
-# ============= VERIFY LOGIN OTP (Login step 2) ============
+# ================= LOGOUT =================================
 # ==========================================================
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.utils import timezone
-from django.contrib.auth import login as django_login
-from .models import User, EmailOTP
-
-def verify_login_otp(request):
-    """Verify OTP during login (sent by email)."""
-    pending_email = request.session.get('pending_email')
-    if not pending_email:
-        messages.error(request, "Session expired. Please log in again.")
-        return redirect('login')
-
-    if request.method == 'POST':
-        otp_code = request.POST.get('otp_code')
-
-        try:
-            user = User.objects.get(email=pending_email)
-        except User.DoesNotExist:
-            messages.error(request, "User not found.")
-            return redirect('login')
-
-        otp_entry = EmailOTP.objects.filter(
-            user=user, otp_code=otp_code, purpose='login', is_used=False
-        ).order_by('-created_at').first()
-
-        if not otp_entry:
-            messages.error(request, "Invalid OTP.")
-            return redirect('verify_login_otp')
-
-        if otp_entry.is_expired():
-            otp_entry.is_used = True
-            otp_entry.save()
-            messages.error(request, "OTP expired. Please request a new one.")
-            request.session.pop('pending_email', None)
-            return redirect('login')
-
-        # OTP is valid
-        otp_entry.is_used = True
-        otp_entry.save()
-
-        django_login(request, user)
-        request.session.pop('pending_email', None)
-
-        messages.success(request, f"Welcome back, {user.username}!")
-        return redirect('dashboard_redirect')
-
-    return render(request, 'users/verify_login_otp.html', {
-        'email': pending_email,
-    })
+def logout_view(request):
+    logout(request)
+    messages.success(request, "You have been logged out successfully.")
+    return redirect('login')
 
 # ==========================================================
 # ================= DASHBOARD REDIRECT =====================
 # ==========================================================
-
 def dashboard_redirect(request):
     if not request.user.is_authenticated:
         return redirect('login_with_otp')
@@ -274,11 +238,9 @@ def dashboard_redirect(request):
     }
     return redirect(role_redirects.get(user.role, '/'))
 
-
 # ==========================================================
 # =================== DASHBOARD VIEWS ======================
 # ==========================================================
-
 class StudentDashboardView(LoginRequiredMixin, StudentRequiredMixin, TemplateView):
     template_name = "dashboards/student_dashboard.html"
 
@@ -289,22 +251,17 @@ class StudentDashboardView(LoginRequiredMixin, StudentRequiredMixin, TemplateVie
         ).order_by("-created_at")[:10]
         return context
 
-
 class LecturerDashboardView(LoginRequiredMixin, LecturerRequiredMixin, TemplateView):
     template_name = "dashboards/lecturer_dashboard.html"
-
 
 class ProgramAdminDashboardView(LoginRequiredMixin, ProgrammeAdminRequiredMixin, TemplateView):
     template_name = "dashboards/program_admin_dashboard.html"
 
-
 class LabTechnicianDashboardView(LoginRequiredMixin, LabTechnicianRequiredMixin, TemplateView):
     template_name = "dashboards/lab_technician_dashboard.html"
 
-
 class ITSupportDashboardView(LoginRequiredMixin, ITSupportRequiredMixin, TemplateView):
     template_name = "dashboards/it_support_dashboard.html"
-
 
 class ManagerDashboardView(LoginRequiredMixin, ManagerRequiredMixin, TemplateView):
     template_name = "dashboards/manager_dashboard.html"
@@ -391,5 +348,3 @@ class ManagerDashboardView(LoginRequiredMixin, ManagerRequiredMixin, TemplateVie
         ctx["days_back"] = days_back
         ctx["start_date"] = start_date
         return ctx
-
-

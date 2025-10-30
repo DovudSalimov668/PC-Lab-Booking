@@ -15,7 +15,7 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
 DEBUG = os.getenv("DEBUG", "False").lower() in ("1", "true", "yes")
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 # =========================
 # Installed apps
@@ -139,24 +139,20 @@ SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True").lower() in ("1", 
 X_FRAME_OPTIONS = "DENY"
 
 # =========================
-# Email – Brevo configuration (FIXED)
+# Email – Brevo SMTP configuration (FIXED)
 # =========================
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-
-# SMTP Configuration for Brevo
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.getenv("BREVO_SMTP_PORT", 587))
-EMAIL_USE_TLS = True  # Always use TLS for Brevo
-EMAIL_HOST_USER = os.getenv("BREVO_SMTP_LOGIN")  # Your Brevo SMTP login email
-EMAIL_HOST_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")  # Your Brevo SMTP password
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("BREVO_SMTP_LOGIN")
+EMAIL_HOST_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@yourdomain.com>")
 
-# Development override
+# Development override - shows emails in console
 if os.getenv("DJANGO_DEVELOPMENT", "0") == "1":
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
     print("DEVELOPMENT MODE: Emails will be printed to console")
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # =========================
 # Auth redirects
@@ -166,17 +162,3 @@ LOGIN_URL = "login"
 LOGOUT_REDIRECT_URL = "login"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-
-BREVO_SMTP_LOGIN = os.getenv("BREVO_SMTP_LOGIN")
-BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")
-
-# =========================
-# Debug Environment Variables
-# =========================
-print("=== ENVIRONMENT VARIABLES DEBUG ===")
-print(f"BREVO_API_KEY exists: {bool(os.getenv('BREVO_API_KEY'))}")
-print(f"BREVO_SMTP_LOGIN exists: {bool(os.getenv('BREVO_SMTP_LOGIN'))}")
-print(f"DEBUG: {DEBUG}")
-print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
-print("===================================")
