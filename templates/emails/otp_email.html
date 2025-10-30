@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: Arial, sans-serif; background-color:#f6f8fa; padding:20px;">
+    <div style="max-width:500px; margin:auto; background:white; border-radius:8px; padding:30px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+      <h2 style="color:#2b6cb0; text-align:center;">🔐 PC Lab Booking Verification</h2>
+
+      <p>Hi <strong>{{ user.username }}</strong>,</p>
+      <p>
+        Please use the following one-time password (OTP) to verify your account or log in:
+      </p>
+
+      <div style="text-align:center; margin:25px 0;">
+        <div style="font-size:28px; font-weight:bold; letter-spacing:5px; color:#2b6cb0;">
+          {{ otp_code }}
+        </div>
+      </div>
+
+      <p>This code will expire in 5 minutes.</p>
+      <p>If you didn’t request this, please ignore this email.</p>
+
+      <hr style="margin:25px 0; border:none; border-top:1px solid #eee;">
+      <p style="text-align:center; font-size:12px; color:#777;">
+        © {{ now|default:"2025" }} PC Lab Booking System
+      </p>
+    </div>
+  </body>
+</html>
