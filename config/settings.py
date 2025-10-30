@@ -170,3 +170,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 BREVO_SMTP_LOGIN = os.getenv("BREVO_SMTP_LOGIN")
 BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")
+
+# =========================
+# Debug Environment Variables
+# =========================
+print("=== ENVIRONMENT VARIABLES DEBUG ===")
+print(f"BREVO_API_KEY exists: {bool(os.getenv('BREVO_API_KEY'))}")
+print(f"BREVO_SMTP_LOGIN exists: {bool(os.getenv('BREVO_SMTP_LOGIN'))}")
+print(f"DEBUG: {DEBUG}")
+print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print("===================================")

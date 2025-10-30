@@ -40,14 +40,20 @@ def register(request):
                 expires_at=timezone.now() + timedelta(minutes=5),
             )
 
-            send_email_async(
-                subject="Your OTP Code – PC Lab Booking",
-                html=f"<p>Your verification code is: <strong>{otp}</strong></p><p>This code expires in 5 minutes.</p>",
-                text=f"Your verification code is {otp}. This code expires in 5 minutes.",
-                recipients=[user.email],
-            )
+            # ADD FALLBACK FOR DEVELOPMENT
+            try:
+                send_email_async(
+                    subject="Your OTP Code – PC Lab Booking",
+                    html=f"<p>Your verification code is: <strong>{otp}</strong></p><p>This code expires in 5 minutes.</p>",
+                    text=f"Your verification code is {otp}. This code expires in 5 minutes.",
+                    recipients=[user.email],
+                )
+                messages.info(request, "An OTP has been sent to your email.")
+            except Exception as e:
+                # FALLBACK: Show OTP on screen for development
+                messages.warning(request, f"Email service temporarily unavailable. Your OTP is: {otp}")
+                print(f"OTP for {user.email}: {otp}")  # Also log to console
 
-            messages.info(request, "An OTP has been sent to your email.")
             request.session["pending_email"] = user.email
             request.session["otp_purpose"] = "registration"
             return redirect("verify_email")
