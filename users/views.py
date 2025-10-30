@@ -1,5 +1,3 @@
-import os
-import requests
 import threading
 from datetime import timedelta
 from django.shortcuts import render, redirect
@@ -20,47 +18,28 @@ from .mixins import (
     LabTechnicianRequiredMixin, ITSupportRequiredMixin, ManagerRequiredMixin
 )
 from notifications.models import Notification
+from notifications.email import send_simple_email   # ✅ use Brevo email helper
 
 
 # ==========================================================
-# ================ EMAIL (RESEND.COM) SYSTEM ===============
+# ================ EMAIL SYSTEM (BREVO SMTP) ===============
 # ==========================================================
 
-def send_resend_email(subject, message, recipient):
+def send_brevo_email(subject, message, recipient, template_name=None, context=None):
     """
-    Sends an email using the Resend.com API.
-    Uses API key stored in environment variable RESEND_API_KEY.
+    Sends an email using Django’s SMTP backend (configured for Brevo).
+    This uses notifications/email.py helper for async sending.
     """
-    def _send():
-        try:
-            api_key = os.getenv("RESEND_API_KEY")
-            if not api_key:
-                print("[Resend] Missing API key.")
-                return
-
-            data = {
-                "from": "PC Lab Booking <noreply@pclab.com>",
-                "to": [recipient],
-                "subject": subject,
-                "text": message
-            }
-
-            response = requests.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=data,
-                timeout=10
-            )
-
-            if response.status_code not in (200, 202):
-                print("[Resend Error]", response.text)
-        except Exception as e:
-            print("[Resend Exception]", e)
-
-    threading.Thread(target=_send, daemon=True).start()
+    try:
+        send_simple_email(
+            subject=subject,
+            message=message,
+            recipient_email=recipient,
+            template_name=template_name,
+            context=context or {}
+        )
+    except Exception as e:
+        print("[Brevo Email Error]", e)
 
 
 # ==========================================================
@@ -83,10 +62,12 @@ def register(request):
                 expires_at=timezone.now() + timedelta(minutes=5)
             )
 
-            send_resend_email(
-                "Your OTP Code – PC Lab Booking",
-                f"Your verification code is: {otp}\nThis code expires in 5 minutes.",
-                user.email
+            send_brevo_email(
+                subject="Your OTP Code – PC Lab Booking",
+                message=f"Your verification code is: {otp}\nThis code expires in 5 minutes.",
+                recipient=user.email,
+                template_name="emails/otp_email.html",
+                context={"otp_code": otp, "user": user}
             )
 
             messages.info(request, "An OTP has been sent to your email for verification.")
@@ -120,15 +101,16 @@ def login_with_otp(request):
             expires_at=timezone.now() + timedelta(minutes=5)
         )
 
-        send_resend_email(
-            "Your Login OTP – PC Lab Booking",
-            f"Your login OTP is: {otp}\nThis code expires in 5 minutes.",
-            user.email
+        send_brevo_email(
+            subject="Your Login OTP – PC Lab Booking",
+            message=f"Your login OTP is: {otp}\nThis code expires in 5 minutes.",
+            recipient=user.email,
+            template_name="emails/otp_email.html",
+            context={"otp_code": otp, "user": user}
         )
 
         request.session['pending_email'] = user.email
         request.session['otp_purpose'] = 'login'
-
         messages.info(request, "A verification code was sent to your email.")
         return redirect('verify_email')
     return render(request, 'users/login.html')
@@ -260,13 +242,46 @@ def resend_otp(request):
         expires_at=timezone.now() + timedelta(minutes=5)
     )
 
-    send_resend_email(
-        "Your New OTP Code – PC Lab Booking",
-        f"Your new verification code is: {otp}\nThis code expires in 5 minutes.",
-        user.email
+    send_brevo_email(
+        subject="Your New OTP Code – PC Lab Booking",
+        message=f"Your new verification code is: {otp}\nThis code expires in 5 minutes.",
+        recipient=user.email,
+        template_name="emails/otp_email.html",
+        context={"otp_code": otp, "user": user}
     )
 
     return JsonResponse({'success': True, 'message': 'A new OTP has been sent to your email.'})
+
+
+# ==========================================================
+# ================= DASHBOARD REDIRECT =====================
+# ==========================================================
+
+def dashboard_redirect(request):
+    if not request.user.is_authenticated:
+        return redirect('login_with_otp')
+
+    user = request.user
+    role_redirects = {
+        "student": 'student_dashboard',
+        "lecturer": 'lecturer_dashboard',
+        "program_admin": 'program_admin_dashboard',
+        "lab_technician": 'lab_technician_dashboard',
+        "it_support": 'it_support_dashboard',
+        "manager": 'manager_dashboard'
+    }
+    return redirect(role_redirects.get(user.role, '/'))
+
+
+# ==========================================================
+# ======================= LOGOUT ===========================
+# ==========================================================
+
+def logout_view(request):
+    logout(request)
+    messages.success(request, "You have been logged out successfully.")
+    return redirect('login')
+
 
 
 # ==========================================================
@@ -407,11 +422,3 @@ class ManagerDashboardView(LoginRequiredMixin, ManagerRequiredMixin, TemplateVie
         return ctx
 
 
-# ==========================================================
-# ======================= LOGOUT ===========================
-# ==========================================================
-
-def logout_view(request):
-    logout(request)
-    messages.success(request, "You have been logged out successfully.")
-    return redirect('login')

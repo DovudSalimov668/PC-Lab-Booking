@@ -1,55 +1,49 @@
 # notifications/email.py
-from resend import Resend
+"""
+Email helper utilities (SMTP version).
+
+Uses Django's configured EMAIL_BACKEND (e.g. Brevo, SendGrid, etc.).
+"""
+
+import logging
+from django.core.mail import send_mail, EmailMultiAlternatives
 from django.conf import settings
 from django.template.loader import render_to_string
-import logging
+from threading import Thread
 
 logger = logging.getLogger(__name__)
 
-_resend = None
-def get_resend_client():
-    global _resend
-    if _resend is None:
-        api_key = getattr(settings, "RESEND_API_KEY", None)
-        if not api_key:
-            raise RuntimeError("RESEND_API_KEY not set in settings")
-        _resend = Resend(api_key)
-    return _resend
+def _send_async(email_obj):
+    """Send email in a background thread (non-blocking)."""
+    def _send():
+        try:
+            email_obj.send(fail_silently=False)
+            logger.info(f"Email sent successfully to: {email_obj.to}")
+        except Exception as e:
+            logger.exception(f"Email send failed: {e}")
+    Thread(target=_send, daemon=True).start()
 
-def send_email_via_resend(subject: str, plaintext: str, html: str, recipients: list[str], from_email: str = None):
-    """
-    Recipients: list of emails
-    html: rendered html body (string)
-    plaintext: fallback text body
-    """
-    if not from_email:
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com")
-
-    try:
-        client = get_resend_client()
-        resp = client.emails.send({
-            "from": from_email,
-            "to": recipients,
-            "subject": subject,
-            "text": plaintext,
-            "html": html
-        })
-        logger.info("Resend email sent: %s", resp)
-        return resp
-    except Exception as e:
-        logger.exception("Failed to send email via Resend: %s", e)
-        return None
 
 def send_simple_email(subject, message, recipient_email, template_name=None, context=None):
-    # convenience helper: if template_name provided, render html
-    if template_name:
-        html = render_to_string(template_name, context or {})
-    else:
-        html = f"<p>{message}</p>"
+    """
+    Sends an email using the configured Django email backend.
+    If template_name is provided, renders HTML and attaches it.
+    """
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@pclab.app>")
 
-    return send_email_via_resend(
+    # prepare plain text and html body
+    if template_name:
+        html_body = render_to_string(template_name, context or {})
+    else:
+        html_body = f"<p>{message}</p>"
+
+    email = EmailMultiAlternatives(
         subject=subject,
-        plaintext=message,
-        html=html,
-        recipients=[recipient_email]
+        body=message,
+        from_email=from_email,
+        to=[recipient_email],
     )
+    email.attach_alternative(html_body, "text/html")
+
+    _send_async(email)
+    return True
