@@ -14,7 +14,7 @@ urlpatterns = [
 
     # IMPORTANT: this must point to your custom view
     path('login/', views.login_with_otp, name='login'),
-    path('verify-login-otp/', views.verify_login_otp, name='verify_login_otp'),
+    # path('verify-login-otp/', views.verify_login_otp, name='verify_login_otp'),
 
     # other URLs...
     path('logout/', views.logout_view, name='logout'),   # implement logout_view or use auth.logout

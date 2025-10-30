@@ -19,7 +19,7 @@ from .mixins import (
 from notifications.models import Notification
 
 # =====================================================
-# Register user + send OTP (WITH FALLBACK)
+# Register user + send OTP
 # =====================================================
 def register(request):
     if request.method == "POST":
@@ -38,7 +38,6 @@ def register(request):
             )
 
             # Try to send email with fallback
-            email_sent = False
             try:
                 from notifications.email import send_simple_email_async
                 send_simple_email_async(
@@ -46,23 +45,22 @@ def register(request):
                     message=f"Your verification code is: <div class='otp'>{otp}</div>This code expires in 5 minutes.",
                     recipient_email=user.email
                 )
-                email_sent = True
                 messages.info(request, "An OTP has been sent to your email.")
             except Exception as e:
                 # FALLBACK: Show OTP on screen
                 messages.warning(request, f"Email service configuring. Your OTP is: <strong>{otp}</strong>")
-                print(f"🚨 OTP for {user.email}: {otp}")  # Log for debugging
+                print(f"🚨 OTP for {user.email}: {otp}")
 
             request.session["pending_email"] = user.email
             request.session["otp_purpose"] = "registration"
-            request.session["otp_code"] = otp  # Store for fallback
+            request.session["otp_code"] = otp
             return redirect("verify_email")
     else:
         form = RegistrationForm()
     return render(request, "users/register.html", {"form": form})
 
 # =====================================================
-# Login + OTP (WITH FALLBACK)
+# Login + OTP
 # =====================================================
 def login_with_otp(request):
     if request.method == "POST":
@@ -97,12 +95,12 @@ def login_with_otp(request):
 
         request.session["pending_email"] = user.email
         request.session["otp_purpose"] = "login"
-        request.session["otp_code"] = otp  # Store for fallback
+        request.session["otp_code"] = otp
         return redirect("verify_email")
     return render(request, "users/login.html")
 
 # =====================================================
-# Resend OTP (WITH FALLBACK)
+# Resend OTP
 # =====================================================
 def resend_otp(request):
     email = request.session.get("pending_email")
@@ -134,7 +132,6 @@ def resend_otp(request):
         )
         return JsonResponse({"success": True, "message": "A new OTP has been sent."})
     except Exception as e:
-        # Fallback response
         return JsonResponse({
             "success": True, 
             "message": f"Email service configuring. Your new OTP is: {otp}",
@@ -145,7 +142,7 @@ def resend_otp(request):
 # ================= VERIFY EMAIL OTP =======================
 # ==========================================================
 def verify_email(request):
-    """Handle OTP verification for registration."""
+    """Handle OTP verification for both registration and login"""
     pending_email = request.session.get('pending_email')
     purpose = request.session.get('otp_purpose', 'registration')
     fallback_otp = request.session.get('otp_code')
