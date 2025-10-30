@@ -10,7 +10,7 @@ def send_email_via_brevo(subject, html_content, text_content, recipients):
     Send email via Brevo API
     """
     try:
-        api_key = getattr(settings, 'BREVO_API_KEY')
+        api_key = getattr(settings, 'EMAIL_HOST_PASSWORD')
         if not api_key:
             logger.error("Brevo API key not configured")
             return False
