@@ -19,6 +19,7 @@ from .mixins import (
 )
 from notifications.models import Notification
 from notifications.email import send_email_async
+from notifications.email import send_simple_email_async
 
 # =====================================================
 # Register user + send OTP

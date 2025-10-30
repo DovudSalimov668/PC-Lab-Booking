@@ -139,20 +139,23 @@ SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True").lower() in ("1", 
 X_FRAME_OPTIONS = "DENY"
 
 # =========================
-# Email – Brevo configuration
+# Email – Brevo configuration (FIXED)
 # =========================
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <no-reply@yourdomain.com>")
 
-# SMTP fallback (used only if BREVO_API_KEY is empty)
+# SMTP Configuration for Brevo
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.getenv("BREVO_SMTP_PORT", 587))
-EMAIL_USE_TLS = os.getenv("BREVO_SMTP_USE_TLS", "True").lower() in ("1", "true", "yes")
-EMAIL_HOST_USER = os.getenv("BREVO_SMTP_LOGIN")
-EMAIL_HOST_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")
+EMAIL_USE_TLS = True  # Always use TLS for Brevo
+EMAIL_HOST_USER = os.getenv("BREVO_SMTP_LOGIN")  # Your Brevo SMTP login email
+EMAIL_HOST_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")  # Your Brevo SMTP password
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@yourdomain.com>")
 
+# Development override
 if os.getenv("DJANGO_DEVELOPMENT", "0") == "1":
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    print("DEVELOPMENT MODE: Emails will be printed to console")
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # =========================
@@ -163,3 +166,7 @@ LOGIN_URL = "login"
 LOGOUT_REDIRECT_URL = "login"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+BREVO_SMTP_LOGIN = os.getenv("BREVO_SMTP_LOGIN")
+BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")
