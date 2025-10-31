@@ -144,12 +144,21 @@ X_FRAME_OPTIONS = "DENY"
 # =========================
 # Email – Brevo SMTP configuration
 # =========================
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
-EMAIL_PORT = int(os.getenv("BREVO_SMTP_PORT", 587))
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("BREVO_SMTP_LOGIN")  # Your Brevo SMTP login
-EMAIL_HOST_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD")  # Your NEW SMTP key
+# =========================
+# Email – Brevo API configuration
+# =========================
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "ggvpby6996@gmail.com")
+BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "PC Lab Booking")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <ggvpby6996@gmail.com>")
+
+# Remove all SMTP settings - DELETE THESE LINES:
+# EMAIL_BACKEND = ...
+# EMAIL_HOST = ...
+# EMAIL_PORT = ...
+# EMAIL_USE_TLS = ...
+# EMAIL_HOST_USER = ...
+# EMAIL_HOST_PASSWORD = ...
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@yourdomain.com>")
 
 # Development override
