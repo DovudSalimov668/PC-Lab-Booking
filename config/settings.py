@@ -139,34 +139,22 @@ SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True").lower() in ("1", 
 X_FRAME_OPTIONS = "DENY"
 
 # =========================
-# Email – Brevo SMTP configuration (FIXED)
-# =========================
-# =========================
-# Email – Brevo SMTP configuration
-# =========================
-# =========================
-# Email – Brevo API configuration
+# Email – Brevo API configuration (CLEANED UP)
 # =========================
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "ggvpby6996@gmail.com")
 BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "PC Lab Booking")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <ggvpby6996@gmail.com>")
 
-# Remove all SMTP settings - DELETE THESE LINES:
-# EMAIL_BACKEND = ...
-# EMAIL_HOST = ...
-# EMAIL_PORT = ...
-# EMAIL_USE_TLS = ...
-# EMAIL_HOST_USER = ...
-# EMAIL_HOST_PASSWORD = ...
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "PC Lab Booking <noreply@yourdomain.com>")
+# Debug: Check if API key is loaded
+print(f"🔧 DEBUG: BREVO_API_KEY loaded: {bool(BREVO_API_KEY)}")
+if BREVO_API_KEY:
+    print(f"🔧 DEBUG: BREVO_API_KEY length: {len(BREVO_API_KEY)}")
+    print(f"🔧 DEBUG: BREVO_API_KEY starts with: {BREVO_API_KEY[:10]}...")
 
-# Development override
+# Development override - use console for emails in development
 if os.getenv("DJANGO_DEVELOPMENT", "0") == "1":
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-    print("DEVELOPMENT MODE: Emails will be printed to console")
-# Development override - shows emails in console
-
+    print("DEVELOPMENT MODE: Emails will be printed to console instead of sending via Brevo")
 
 # =========================
 # Auth redirects

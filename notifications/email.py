@@ -1,5 +1,6 @@
 import logging
 import requests
+import os
 from django.conf import settings
 from threading import Thread
 
@@ -10,10 +11,25 @@ def send_email_via_brevo(subject, html_content, text_content, recipients):
     Send email via Brevo API
     """
     try:
-        api_key = getattr(settings, 'BREVO_API_KEY')
+        # Get API key from settings
+        api_key = getattr(settings, 'BREVO_API_KEY', None)
+        
+        # Debug output
+        print(f"🔑 DEBUG: API Key exists: {bool(api_key)}")
+        if api_key:
+            print(f"🔑 DEBUG: API Key length: {len(api_key)}")
+        
         if not api_key:
-            logger.error("Brevo API key not configured")
+            logger.error("❌ Brevo API key not configured")
+            print("❌ Brevo API key not found - check Render environment variables")
             return False
+
+        # Check if we're in development mode
+        if os.getenv("DJANGO_DEVELOPMENT", "0") == "1":
+            print(f"📧 DEVELOPMENT MODE - Email would be sent to: {recipients}")
+            print(f"📧 SUBJECT: {subject}")
+            print(f"📧 CONTENT: {text_content}")
+            return True
 
         url = "https://api.brevo.com/v3/smtp/email"
         headers = {
@@ -22,7 +38,7 @@ def send_email_via_brevo(subject, html_content, text_content, recipients):
             'content-type': 'application/json'
         }
         
-        sender_email = getattr(settings, 'BREVO_SENDER_EMAIL', 'noreply@example.com')
+        sender_email = getattr(settings, 'BREVO_SENDER_EMAIL', 'ggvpby6996@gmail.com')
         sender_name = getattr(settings, 'BREVO_SENDER_NAME', 'PC Lab Booking')
         
         payload = {
@@ -36,7 +52,10 @@ def send_email_via_brevo(subject, html_content, text_content, recipients):
             "textContent": text_content
         }
 
+        print(f"📧 Sending email to: {recipients}")
         response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        print(f"📧 Brevo API response: {response.status_code}")
         
         if response.status_code in [200, 201]:
             logger.info(f"✅ Email sent successfully to {recipients}")
@@ -69,14 +88,8 @@ def send_simple_email_async(subject, message, recipient_email):
     """
     Simple email wrapper for OTP
     """
-    # Extract OTP from message for clean text version
-    import re
-    otp_match = re.search(r'<div class=\'otp\'>(.*?)</div>', message)
-    if otp_match:
-        otp_code = otp_match.group(1)
-        text_message = f"Your OTP code is: {otp_code}. This code expires in 5 minutes."
-    else:
-        text_message = message.replace('<div class=\'otp\'>', '').replace('</div>', '')
+    # Create clean text version
+    text_message = message.replace('<div class=\'otp\'>', '').replace('</div>', '')
     
     html_content = f"""
     <!DOCTYPE html>
