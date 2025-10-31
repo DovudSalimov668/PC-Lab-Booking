@@ -1,39 +1,17 @@
-# notifications/services.py
-from threading import Thread
-from django.core.mail import send_mail
+# notifications/services.py - COMPLETE REPLACEMENT
+import logging
 from django.conf import settings
 from django.utils import timezone
-from django.template.loader import render_to_string
-from django.contrib.auth import get_user_model
 from .models import Notification
+from users.models import User
+from .email import send_simple_email_async
 
-User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class NotificationService:
     """
-    NotificationService:
-    - create_notification: saves DB entry, optionally sends email (async)
-    - notify_booking_* helpers for booking lifecycle events
+    Complete notification service that matches your bookings views
     """
-
-    @staticmethod
-    def _send_email_background(subject, message, recipient_list, html_message=None):
-        """Send email in background thread (non-blocking)."""
-        def _send():
-            try:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@example.com"),
-                    recipient_list=recipient_list,
-                    html_message=html_message,
-                    fail_silently=False
-                )
-            except Exception as e:
-                # In production, replace print with proper logging
-                print("[NotificationService] Failed to send email:", e)
-
-        Thread(target=_send, daemon=True).start()
 
     @staticmethod
     def create_notification(
@@ -47,29 +25,15 @@ class NotificationService:
         send_email=True
     ):
         """
-        Create DB notification and optionally email recipient(s).
-        - recipient: single User instance (preferred)
-        - target_role: string role to broadcast to (recipient omitted)
+        Create DB notification and optionally send email
         """
-
-        # Create DB notification records
-        if recipient:
-            Notification.objects.create(
-                recipient=recipient,
-                sender=sender,
-                title=title,
-                message=message,
-                action_url=link,
-                notification_type=notification_type,
-                target_role=target_role or None,
-                is_read=False,
-                created_at=timezone.now()
-            )
-        elif target_role:
-            users = User.objects.filter(role=target_role, is_active=True)
-            for u in users:
-                Notification.objects.create(
-                    recipient=u,
+        try:
+            print(f"📧 Creating notification: {title} for {recipient.email if recipient else target_role}")
+            
+            # Create DB notification records
+            if recipient:
+                notification = Notification.objects.create(
+                    recipient=recipient,
                     sender=sender,
                     title=title,
                     message=message,
@@ -79,81 +43,144 @@ class NotificationService:
                     is_read=False,
                     created_at=timezone.now()
                 )
-        else:
-            # No recipient and no role -> do nothing (or write a system-wide notification if you have such a model)
-            pass
+                
+                # Send email if requested
+                if send_email and recipient.email:
+                    try:
+                        send_simple_email_async(
+                            subject=f"[PC Lab] {title}",
+                            message=f"{message}<br><br><a href='{link or 'https://pc-lab-booking.onrender.com'}'>View in Dashboard</a>",
+                            recipient_email=recipient.email
+                        )
+                        print(f"✅ Notification email sent to {recipient.email}")
+                    except Exception as e:
+                        print(f"❌ Failed to send email to {recipient.email}: {e}")
 
-        # Send email if requested
-        if send_email:
-            if recipient and recipient.email:
-                NotificationService._send_email_background(
-                    subject=f"[PC Lab Booking] {title}",
-                    message=message,
-                    recipient_list=[recipient.email],
-                    html_message=None
-                )
             elif target_role:
-                recipients = list(User.objects.filter(role=target_role, is_active=True).exclude(email__isnull=True).exclude(email__exact="").values_list("email", flat=True))
-                if recipients:
-                    # split recipients into smaller lists if necessary — most SMTP servers limit recipients per email
-                    NotificationService._send_email_background(
-                        subject=f"[PC Lab Booking] {title}",
+                users = User.objects.filter(role=target_role, is_active=True)
+                for user in users:
+                    Notification.objects.create(
+                        recipient=user,
+                        sender=sender,
+                        title=title,
                         message=message,
-                        recipient_list=list(recipients),
-                        html_message=None
+                        action_url=link,
+                        notification_type=notification_type,
+                        target_role=target_role,
+                        is_read=False,
+                        created_at=timezone.now()
                     )
+                    
+                    # Send email to each user in target role
+                    if send_email and user.email:
+                        try:
+                            send_simple_email_async(
+                                subject=f"[PC Lab] {title}",
+                                message=f"{message}<br><br><a href='{link or 'https://pc-lab-booking.onrender.com'}'>View in Dashboard</a>",
+                                recipient_email=user.email
+                            )
+                            print(f"✅ Notification email sent to {user.email}")
+                        except Exception as e:
+                            print(f"❌ Failed to send email to {user.email}: {e}")
 
-    # Booking-specific helpers
+            else:
+                print("❌ No recipient or target_role specified for notification")
+                
+        except Exception as e:
+            logger.error(f"❌ Error creating notification: {str(e)}")
+            print(f"❌ Notification creation failed: {e}")
+
+    # ================= BOOKING NOTIFICATIONS =================
+
     @staticmethod
     def notify_booking_created(booking):
-        admins = User.objects.filter(role="program_admin", is_active=True)
-        for admin in admins:
-            NotificationService.create_notification(
-                recipient=admin,
-                title=f"New Booking Request: {booking.lab.name if booking.lab else 'Lab'}",
-                message=(f"{booking.requester.username} requested booking for {booking.lab.name if booking.lab else 'lab'} "
-                         f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."),
-                link=f"/bookings/{booking.id}/",
-                sender=booking.requester,
-                notification_type="booking_created",
-                send_email=True
-            )
+        """Notify admins about new booking request"""
+        try:
+            print(f"🔔 Notifying admins about new booking #{booking.id}")
+            admins = User.objects.filter(role__in=["program_admin", "lab_technician", "manager"], is_active=True)
+            
+            for admin in admins:
+                NotificationService.create_notification(
+                    recipient=admin,
+                    title=f"New Booking Request - {booking.lab.name if booking.lab else 'Lab'}",
+                    message=f"{booking.requester.username} requested booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')}.",
+                    link=f"/bookings/{booking.id}/",
+                    sender=booking.requester,
+                    notification_type="booking_created",
+                    send_email=True
+                )
+            print(f"✅ Booking created notifications sent to {admins.count()} admins")
+        except Exception as e:
+            print(f"❌ Error sending booking created notifications: {e}")
 
     @staticmethod
     def notify_booking_approved(booking, approver):
-        NotificationService.create_notification(
-            recipient=booking.requester,
-            title=f"Booking Approved: {booking.lab.name if booking.lab else 'Lab'}",
-            message=(f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
-                     f"was approved by {approver.username}."),
-            link=f"/bookings/{booking.id}/",
-            sender=approver,
-            notification_type="booking_approved",
-            send_email=True
-        )
+        """Notify requester about booking approval"""
+        try:
+            print(f"🔔 Notifying {booking.requester.email} about booking approval")
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking Approved - {booking.lab.name if booking.lab else 'Lab'}",
+                message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} was approved by {approver.username}.",
+                link=f"/bookings/{booking.id}/",
+                sender=approver,
+                notification_type="booking_approved",
+                send_email=True
+            )
+            print(f"✅ Booking approved notification sent to {booking.requester.email}")
+        except Exception as e:
+            print(f"❌ Error sending booking approved notification: {e}")
 
     @staticmethod
     def notify_booking_rejected(booking, approver):
-        NotificationService.create_notification(
-            recipient=booking.requester,
-            title=f"Booking Rejected: {booking.lab.name if booking.lab else 'Lab'}",
-            message=(f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
-                     f"was rejected by {approver.username}."),
-            link=f"/bookings/{booking.id}/",
-            sender=approver,
-            notification_type="booking_rejected",
-            send_email=True
-        )
+        """Notify requester about booking rejection"""
+        try:
+            print(f"🔔 Notifying {booking.requester.email} about booking rejection")
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking Rejected - {booking.lab.name if booking.lab else 'Lab'}",
+                message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} was rejected by {approver.username}.",
+                link=f"/bookings/{booking.id}/",
+                sender=approver,
+                notification_type="booking_rejected",
+                send_email=True
+            )
+            print(f"✅ Booking rejected notification sent to {booking.requester.email}")
+        except Exception as e:
+            print(f"❌ Error sending booking rejected notification: {e}")
 
     @staticmethod
     def notify_booking_cancelled(booking, actor):
-        NotificationService.create_notification(
-            recipient=booking.requester,
-            title=f"Booking Cancelled: {booking.lab.name if booking.lab else 'Lab'}",
-            message=(f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
-                     f"was cancelled by {actor.username}."),
-            link=f"/bookings/{booking.id}/",
-            sender=actor,
-            notification_type="booking_cancelled",
-            send_email=True
-        )
+        """Notify about booking cancellation"""
+        try:
+            print(f"🔔 Notifying {booking.requester.email} about booking cancellation")
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking Cancelled - {booking.lab.name if booking.lab else 'Lab'}",
+                message=f"Your booking for {booking.lab.name if booking.lab else 'lab'} on {booking.start.strftime('%Y-%m-%d %H:%M')} was cancelled by {actor.username}.",
+                link=f"/bookings/{booking.id}/",
+                sender=actor,
+                notification_type="booking_cancelled",
+                send_email=True
+            )
+            print(f"✅ Booking cancelled notification sent to {booking.requester.email}")
+        except Exception as e:
+            print(f"❌ Error sending booking cancelled notification: {e}")
+
+    @staticmethod
+    def notify_booking_completed(booking, user):
+        """Notify requester about booking completion"""
+        try:
+            print(f"🔔 Notifying {booking.requester.email} about booking completion")
+            NotificationService.create_notification(
+                recipient=booking.requester,
+                title=f"Booking #{booking.id} completed",
+                message=f"Booking for {booking.lab.name} on {booking.start} completed.",
+                link=f"/bookings/{booking.id}/",
+                sender=user,
+                notification_type="booking_completed",
+                send_email=True
+            )
+            print(f"✅ Booking completed notification sent to {booking.requester.email}")
+        except Exception as e:
+            print(f"❌ Error sending booking completed notification: {e}")
