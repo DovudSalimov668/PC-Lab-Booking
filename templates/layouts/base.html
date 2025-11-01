@@ -764,6 +764,18 @@
             background: rgba(102, 126, 234, 0.3);
             color: var(--dark);
         }
+        .notif-item:hover {
+         background-color: #f8f9fa !important;
+         transition: background-color 0.15s ease-in-out;
+        }
+
+        .dropdown-item:focus {
+            background-color: #f8f9fa !important;
+        }
+
+        #markAllRead:hover {
+            text-decoration: underline !important;
+        }
 
         /* Responsive Design */
         @media (max-width: 992px) {
@@ -852,6 +864,7 @@
                     <i class="bi bi-calendar-week"></i> Calendar
                 </a>
                 </li>
+                
                 <li class="nav-item">
              <li class="nav-item dropdown">
             <a class="nav-link position-relative" href="#" id="notifDropdown" role="button" data-bs-toggle="dropdown">
@@ -864,33 +877,48 @@
             </a>
 
             <ul class="dropdown-menu dropdown-menu-end shadow-sm p-0" aria-labelledby="notifDropdown" style="width: 360px; max-height: 420px; overflow-y: auto;">
-                <li class="dropdown-header bg-light text-center py-2">
-                Notifications
-                <a href="#" id="markAllRead" class="small ms-2 text-decoration-none">Mark all as read</a>
+                <li class="dropdown-header bg-light py-2 d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Notifications</span>
+                    {% if notifications %}
+                    <a href="#" id="markAllRead" class="small text-decoration-none text-primary">Mark all as read</a>
+                    {% endif %}
                 </li>
 
                 {% for n in notifications %}
                 <li>
                     <div class="dropdown-item d-block notif-item {% if not n.is_read %}fw-bold bg-light{% endif %}" data-id="{{ n.id }}">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                        <div class="fw-semibold">{{ n.title }}</div>
-                        <div class="text-muted small">{{ n.message|truncatechars:70 }}</div>
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1 me-2">
+                                <div class="fw-semibold text-dark">{{ n.title }}</div>
+                                <div class="text-muted small mt-1">{{ n.message|truncatechars:70 }}</div>
+                            </div>
+                            <small class="text-secondary text-nowrap">{{ n.created_at|timesince }} ago</small>
                         </div>
-                        <small class="text-secondary">{{ n.created_at|timesince }} ago</small>
-                    </div>
-                    {% if not n.is_read %}
-                        <a href="#" data-mark-read data-id="{{ n.id }}" class="small text-success mt-1 d-block">✓ Mark as read</a>
-                    {% endif %}
+                        {% if not n.is_read %}
+                        <div class="mt-2">
+                            <a href="#" data-mark-read data-id="{{ n.id }}" class="small text-success text-decoration-none">
+                                <i class="bi bi-check-circle me-1"></i>Mark as read
+                            </a>
+                        </div>
+                        {% endif %}
                     </div>
                 </li>
                 {% empty %}
-                <li class="dropdown-item text-center text-muted py-3">No notifications</li>
+                <li class="dropdown-item text-center text-muted py-4">
+                    <i class="bi bi-bell text-muted d-block mb-2" style="font-size: 1.5rem;"></i>
+                    No notifications
+                </li>
                 {% endfor %}
+                
+                {% if notifications %}
                 <li><hr class="dropdown-divider my-1"></li>
-                <li><a class="dropdown-item text-center small" href="{% url 'notifications:all_notifications' %}">View all</a></li>
+                <li>
+                    <a class="dropdown-item text-center small text-primary" href="{% url 'notifications:all_notifications' %}">
+                        <i class="bi bi-list-ul me-1"></i>View all notifications
+                    </a>
+                </li>
+                {% endif %}
             </ul>
-            </li>
 
 
 

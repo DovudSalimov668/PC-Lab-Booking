@@ -1,31 +1,322 @@
 {% extends 'layouts/base.html' %}
 {% block content %}
 <div class="container py-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="fw-bold text-primary">Notifications</h2>
-    {% comment %} <button id="markAllRead" class="btn btn-sm btn-outline-secondary">Mark all as read</button> {% endcomment %}
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="fw-bold text-primary mb-1">Notifications</h2>
+      <p class="text-muted mb-0">
+        Total: {{ total_count }} • Unread: {{ unread_count }} • Read: {{ read_count }}
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      {% if notifications %}
+      <button id="markAllRead" class="btn btn-success">
+        <i class="bi bi-check-all me-1"></i>Mark All Read
+      </button>
+      <a href="{% url 'notifications:delete_all_read' %}" class="btn btn-outline-danger" 
+         onclick="return confirm('Are you sure you want to delete all read notifications?')">
+        <i class="bi bi-trash me-1"></i>Delete Read
+      </a>
+      {% endif %}
+    </div>
   </div>
 
-  {% if notifications %}
-    {% for note in notifications %}
-      <div class="card border-0 shadow-sm mb-3 notif-item {% if not note.is_read %}fw-bold bg-light{% endif %}" data-id="{{ note.id }}">
-        <div class="card-body">
-          <h5 class="fw-semibold">{{ note.title }}</h5>
-          <p class="text-muted mb-1">{{ note.message }}</p>
-          {% if note.link %}
-            <a href="{{ note.link }}" class="small text-decoration-none text-primary">View related item</a>
-          {% endif %}
-          <div class="d-flex justify-content-between mt-2">
-            <small class="text-secondary">{{ note.created_at|timesince }} ago</small>
-            {% if not note.is_read %}
-              {% comment %} <a href="#" data-mark-read data-id="{{ note.id }}" class="btn btn-sm btn-outline-success">Mark as read</a> {% endcomment %}
-            {% endif %}
+  <!-- Filters -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form method="get" class="row g-3 align-items-center">
+        <div class="col-md-4">
+          <label for="status" class="form-label">Status</label>
+          <select class="form-select" id="status" name="status" onchange="this.form.submit()">
+            <option value="all" {% if current_status_filter == 'all' %}selected{% endif %}>All Notifications</option>
+            <option value="unread" {% if current_status_filter == 'unread' %}selected{% endif %}>Unread Only</option>
+            <option value="read" {% if current_status_filter == 'read' %}selected{% endif %}>Read Only</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="type" class="form-label">Type</label>
+          <select class="form-select" id="type" name="type" onchange="this.form.submit()">
+            <option value="all" {% if current_type_filter == 'all' %}selected{% endif %}>All Types</option>
+            <option value="general" {% if current_type_filter == 'general' %}selected{% endif %}>General</option>
+            <option value="booking_created" {% if current_type_filter == 'booking_created' %}selected{% endif %}>Booking Requests</option>
+            <option value="booking_approved" {% if current_type_filter == 'booking_approved' %}selected{% endif %}>Booking Approved</option>
+            <option value="booking_rejected" {% if current_type_filter == 'booking_rejected' %}selected{% endif %}>Booking Rejected</option>
+            <option value="booking_cancelled" {% if current_type_filter == 'booking_cancelled' %}selected{% endif %}>Booking Cancelled</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">&nbsp;</label>
+          <div>
+            <a href="{% url 'notifications:all_notifications' %}" class="btn btn-outline-secondary">Clear Filters</a>
           </div>
         </div>
-      </div>
-    {% endfor %}
+      </form>
+    </div>
+  </div>
+
+  <!-- Notifications List -->
+  {% if notifications %}
+    <div class="notifications-list">
+      {% for note in notifications %}
+        <div class="card border-0 shadow-sm mb-3 notif-item {% if not note.is_read %}border-start border-3 border-primary{% endif %}" 
+             data-id="{{ note.id }}">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h5 class="card-title mb-0 {% if not note.is_read %}text-primary fw-bold{% else %}text-dark{% endif %}">
+                {{ note.title }}
+                {% if not note.is_read %}
+                  <span class="badge bg-primary ms-2">New</span>
+                {% endif %}
+              </h5>
+              <div class="dropdown">
+                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                  <i class="bi bi-three-dots"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                  {% if not note.is_read %}
+                    <li>
+                      <a class="dropdown-item mark-read-single" href="#" data-id="{{ note.id }}">
+                        <i class="bi bi-check text-success me-2"></i>Mark as Read
+                      </a>
+                    </li>
+                  {% endif %}
+                  <li>
+                    <a class="dropdown-item text-danger delete-notification" href="#" data-id="{{ note.id }}">
+                      <i class="bi bi-trash me-2"></i>Delete
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            
+            <p class="text-muted mb-2">{{ note.message }}</p>
+            
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                {% if note.action_url %}
+                  <a href="{{ note.action_url }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-eye me-1"></i>View Details
+                  </a>
+                {% endif %}
+                <small class="text-muted ms-2">
+                  <i class="bi bi-clock me-1"></i>{{ note.created_at|timesince }} ago
+                </small>
+                {% if note.notification_type and note.notification_type != 'general' %}
+                  <span class="badge bg-secondary ms-2">{{ note.get_notification_type_display }}</span>
+                {% endif %}
+              </div>
+              
+              {% if note.sender %}
+                <small class="text-muted">
+                  From: {{ note.sender.get_full_name|default:note.sender.username }}
+                </small>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
   {% else %}
-    <div class="alert alert-info text-center">You have no notifications yet.</div>
+    <div class="text-center py-5">
+      <i class="bi bi-bell text-muted" style="font-size: 4rem;"></i>
+      <h4 class="text-muted mt-3">No notifications found</h4>
+      <p class="text-muted">
+        {% if current_status_filter != 'all' or current_type_filter != 'all' %}
+          Try adjusting your filters to see more notifications.
+        {% else %}
+          You're all caught up! New notifications will appear here.
+        {% endif %}
+      </p>
+      {% if current_status_filter != 'all' or current_type_filter != 'all' %}
+        <a href="{% url 'notifications:all_notifications' %}" class="btn btn-primary">
+          Clear Filters
+        </a>
+      {% endif %}
+    </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+  // Function to update UI after mark read
+  function updateNotificationUI(notificationId) {
+    const notifElement = document.querySelector(`.notif-item[data-id="${notificationId}"]`);
+    if (notifElement) {
+      // Remove new styling
+      notifElement.classList.remove('border-start', 'border-3', 'border-primary');
+      
+      // Update title
+      const title = notifElement.querySelector('.card-title');
+      title.classList.remove('text-primary', 'fw-bold');
+      title.classList.add('text-dark');
+      
+      // Remove new badge
+      const newBadge = notifElement.querySelector('.badge.bg-primary');
+      if (newBadge) newBadge.remove();
+      
+      // Remove mark as read option from dropdown
+      const markReadOption = notifElement.querySelector('.mark-read-single');
+      if (markReadOption) markReadOption.remove();
+      
+      console.log('UI updated for notification:', notificationId);
+    }
+  }
+
+  // Mark single notification as read
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('mark-read-single') || 
+        e.target.closest('.mark-read-single')) {
+      e.preventDefault();
+      
+      const target = e.target.classList.contains('mark-read-single') ? e.target : e.target.closest('.mark-read-single');
+      const notificationId = target.dataset.id;
+      
+      if (!notificationId) {
+        console.error('No notification ID found');
+        return;
+      }
+
+      fetch("{% url 'notifications:mark_read' %}", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "id=" + encodeURIComponent(notificationId)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          updateNotificationUI(notificationId);
+          // Update badge count in navbar
+          updateNavbarBadge();
+          showToast('success', data.message);
+        } else {
+          showToast('error', data.error || 'Failed to mark as read');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showToast('error', 'Network error occurred');
+      });
+    }
+  });
+
+  // Delete single notification
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('delete-notification') || 
+        e.target.closest('.delete-notification')) {
+      e.preventDefault();
+      
+      const target = e.target.classList.contains('delete-notification') ? e.target : e.target.closest('.delete-notification');
+      const notificationId = target.dataset.id;
+      
+      if (!confirm('Are you sure you want to delete this notification?')) {
+        return;
+      }
+
+      if (!notificationId) {
+        console.error('No notification ID found');
+        return;
+      }
+
+      fetch("{% url 'notifications:delete_notification' %}", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "id=" + encodeURIComponent(notificationId)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const notifElement = document.querySelector(`.notif-item[data-id="${notificationId}"]`);
+          if (notifElement) {
+            notifElement.remove();
+          }
+          updateNavbarBadge();
+          showToast('success', data.message);
+        } else {
+          showToast('error', data.error || 'Failed to delete notification');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showToast('error', 'Network error occurred');
+      });
+    }
+  });
+
+  // Mark all as read
+  const markAllBtn = document.getElementById('markAllRead');
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', function() {
+      if (!confirm('Mark all notifications as read?')) return;
+
+      fetch("{% url 'notifications:mark_all_read' %}", {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+        },
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Update all notifications in the list
+          document.querySelectorAll('.notif-item').forEach(notifElement => {
+            updateNotificationUI(notifElement.dataset.id);
+          });
+          
+          updateNavbarBadge();
+          showToast('success', data.message);
+        } else {
+          showToast('error', data.error || 'Failed to mark all as read');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showToast('error', 'Network error occurred');
+      });
+    });
+  }
+
+  // Update navbar badge count
+  function updateNavbarBadge() {
+    // This would typically refresh the page or update via another AJAX call
+    // For now, we'll reload the page to get updated counts
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  }
+
+  // Toast notification function
+  function showToast(type, message) {
+    // Use Django messages or create a simple toast
+    const toastContainer = document.createElement('div');
+    toastContainer.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show position-fixed`;
+    toastContainer.style.cssText = 'top: 20px; right: 20px; z-index: 1060; min-width: 300px;';
+    
+    toastContainer.innerHTML = `
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(toastContainer);
+    
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+      if (toastContainer.parentNode) {
+        toastContainer.parentNode.removeChild(toastContainer);
+      }
+    }, 3000);
+  }
+});
+</script>
 {% endblock %}
