@@ -150,6 +150,8 @@
         @keyframes bounce {
             0%, 100% { transform: translateY(0) rotate(0deg); }
             25% { transform: translateY(-1px) rotate(-1deg); }
+            
+            
         }
 
         .navbar-brand:hover {
@@ -195,7 +197,7 @@
         .nav-link:hover {
             background: rgba(102, 126, 234, 0.12);
             color: var(--primary) !important;
-            transform: translateY(-3px);
+            transform: translateY(-2px);
         }
 
         .nav-link:hover i {
@@ -322,7 +324,7 @@
         .btn-login:hover {
             background: var(--primary);
             color: white;
-            transform: translateY(-4px);
+            transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
         }
 
@@ -333,7 +335,7 @@
         }
 
         .btn-register:hover {
-            transform: translateY(-4px);
+            transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6);
             color: white;
         }
@@ -444,11 +446,12 @@
             50% { background-position: 100% 50%; }
         }
 
+
         .card:hover {
-            transform: translateY(-1px) scale(1.02);
-            box-shadow: var(--shadow-xl);
-            border-color: rgba(102, 126, 234, 0.3);
+        transform: perspective(1000px) rotateX(1deg) rotateY(1deg) translateY(-2px) scale(1.01);
+        opacity: 1;
         }
+
 
         .card:hover::before {
             transform: scaleX(1);
@@ -510,7 +513,7 @@
         }
 
         .btn-primary:hover {
-            transform: translateY(-4px);
+            transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6);
         }
 
@@ -1105,7 +1108,7 @@
 @keyframes slideDown {
     from {
         opacity: 0;
-        transform: translateY(-10px);
+        transform: translateY(-1px);
     }
     to {
         opacity: 1;
@@ -1273,7 +1276,7 @@ x
 @keyframes slideDown {
     from {
         opacity: 0;
-        transform: translateY(-10px);
+        transform: translateY(-1px);
     }
     to {
         opacity: 1;

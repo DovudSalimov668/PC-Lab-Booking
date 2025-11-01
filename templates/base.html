@@ -446,11 +446,12 @@
             50% { background-position: 100% 50%; }
         }
 
+
         .card:hover {
-            transform: translateY(-1px) scale(1.02);
-            box-shadow: var(--shadow-xl);
-            border-color: rgba(102, 126, 234, 0.3);
+        transform: perspective(1000px) rotateX(1deg) rotateY(1deg) translateY(-2px) scale(1.01);
+        opacity: 1;
         }
+
 
         .card:hover::before {
             transform: scaleX(1);
