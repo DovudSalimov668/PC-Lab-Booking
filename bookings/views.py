@@ -449,7 +449,7 @@ class BookingDetailView(LoginRequiredMixin, DetailView):
             messages.error(request, "No action specified")
             return redirect("booking_detail", pk=booking.pk)
 
-        is_admin = user.is_superuser or user.role in ["program_admin", "lab_technician", "it_support", "manager"]
+        is_admin = user.is_superuser or user.role in ["program_admin", "lab_technician", "it_support", "manager",'lecturer']
         is_owner = user == booking.requester
 
         if action == "cancel":
