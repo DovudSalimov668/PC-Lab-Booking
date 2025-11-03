@@ -1,4 +1,4 @@
-# notifications/services.py
+# bookings/services.py
 from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
@@ -6,7 +6,6 @@ from django.utils import timezone
 from threading import Thread
 from users.models import User
 from .models import Notification
-from .utils import send_simple_email_async  # ✅ Import the working Brevo function
 
 
 class NotificationService:
@@ -41,13 +40,13 @@ class NotificationService:
             is_read=False,
         )
 
-        # Email sending - NOW USING BREVO ✅
+        # Email sending
         if send_email:
             if recipient and recipient.email:
                 NotificationService._send_email_async(
                     subject=f"[PC Lab Booking] {title}",
                     message=message,
-                    recipient_email=recipient.email,  # ✅ Single email parameter
+                    recipient_list=[recipient.email],
                 )
             elif target_role:
                 users = User.objects.filter(role=target_role, is_active=True)
@@ -56,12 +55,12 @@ class NotificationService:
                         NotificationService._send_email_async(
                             subject=f"[PC Lab Booking] {title}",
                             message=message,
-                            recipient_email=user.email,  # ✅ Single email parameter
+                            recipient_list=[user.email],
                         )
         return notif
 
     # -----------------------------
-    # 2️⃣ Specific notification types - UPDATED LINKS ✅
+    # 2️⃣ Specific notification types
     # -----------------------------
     @staticmethod
     def notify_booking_created(booking):
@@ -74,7 +73,7 @@ class NotificationService:
                     f"{booking.requester.username} requested to book {booking.lab.name} "
                     f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."
                 ),
-                link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
+                link=f"/bookings/{booking.id}/",
                 sender=booking.requester,
                 notification_type="booking_created",
             )
@@ -88,7 +87,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"has been approved by {approver.username}."
             ),
-            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
+            link=f"/bookings/{booking.id}/",
             sender=approver,
             notification_type="booking_approved",
         )
@@ -102,7 +101,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was rejected by {approver.username}."
             ),
-            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
+            link=f"/bookings/{booking.id}/",
             sender=approver,
             notification_type="booking_rejected",
         )
@@ -116,24 +115,27 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was cancelled by {actor.username}."
             ),
-            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
+            link=f"/bookings/{booking.id}/",
             sender=actor,
             notification_type="booking_cancelled",
         )
 
     # -----------------------------
-    # 3️⃣ UPDATED Email Helper - NOW USING BREVO ✅
+    # 3️⃣ Async Email Helper
     # -----------------------------
     @staticmethod
-    def _send_email_async(subject, message, recipient_email):
-        """Send email using the same Brevo system that works for OTP"""
-        try:
-            # Use the same function that works for OTP emails
-            send_simple_email_async(
-                subject=subject,
-                message=message,
-                recipient_email=recipient_email
-            )
-            print(f"✅ Notification email queued for: {recipient_email}")
-        except Exception as e:
-            print(f"❌ Notification email error: {e}")
+    def _send_email_async(subject, message, recipient_list):
+        """Send email in a background thread (non-blocking)."""
+        def _send():
+            try:
+                send_mail(
+                    subject,
+                    message,
+                    getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@pclab.com"),
+                    recipient_list,
+                    fail_silently=False,
+                )
+            except Exception as e:
+                print("[NotificationService] Email send error:", e)
+
+        Thread(target=_send, daemon=True).start()

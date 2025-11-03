@@ -56,10 +56,6 @@ urlpatterns = [
 
     # Add these URLs to bookings/urls.py
 
-
-     re_path(r'^(?P<pk>\d+)/$', views.booking_redirect, name='booking_redirect'),
-
-
     
     # Policy Exception URLs
     path("policy-exception/<int:booking_id>/request/", 
