@@ -1,5 +1,5 @@
 # bookings/urls.py
-from django.urls import path
+from django.urls import path, re_path
 from . import views
 
 urlpatterns = [
@@ -57,7 +57,7 @@ urlpatterns = [
     # Add these URLs to bookings/urls.py
 
 
-
+     re_path(r'^(?P<pk>\d+)/$', views.booking_redirect, name='booking_redirect'),
 
 
     

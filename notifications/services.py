@@ -61,7 +61,7 @@ class NotificationService:
         return notif
 
     # -----------------------------
-    # 2️⃣ Specific notification types
+    # 2️⃣ Specific notification types - UPDATED LINKS ✅
     # -----------------------------
     @staticmethod
     def notify_booking_created(booking):
@@ -74,7 +74,7 @@ class NotificationService:
                     f"{booking.requester.username} requested to book {booking.lab.name} "
                     f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."
                 ),
-                link=f"{booking.id}/",
+                link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
                 sender=booking.requester,
                 notification_type="booking_created",
             )
@@ -88,7 +88,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"has been approved by {approver.username}."
             ),
-            link=f"{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
             sender=approver,
             notification_type="booking_approved",
         )
@@ -102,7 +102,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was rejected by {approver.username}."
             ),
-            link=f"{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
             sender=approver,
             notification_type="booking_rejected",
         )
@@ -116,7 +116,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was cancelled by {actor.username}."
             ),
-            link=f"{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ CHANGED: /8/ instead of /bookings/8/
             sender=actor,
             notification_type="booking_cancelled",
         )

@@ -2254,3 +2254,17 @@ def lab_availability_json(request):
         ]
 
     return JsonResponse({"available_slots": slots})
+
+
+
+
+# bookings/views.py
+from django.shortcuts import redirect, get_object_or_404
+from .models import Booking
+
+def booking_redirect(request, pk):
+    """
+    Redirect from /8/ to /bookings/8/
+    """
+    booking = get_object_or_404(Booking, pk=pk)
+    return redirect('booking_detail', pk=booking.id)
