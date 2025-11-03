@@ -74,7 +74,7 @@ class NotificationService:
                     f"{booking.requester.username} requested to book {booking.lab.name} "
                     f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."
                 ),
-                link=f"/bookings/{booking.id}/",
+                link=f"{booking.id}/",
                 sender=booking.requester,
                 notification_type="booking_created",
             )
@@ -88,7 +88,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"has been approved by {approver.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"{booking.id}/",
             sender=approver,
             notification_type="booking_approved",
         )
@@ -102,7 +102,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was rejected by {approver.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"{booking.id}/",
             sender=approver,
             notification_type="booking_rejected",
         )
@@ -116,7 +116,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was cancelled by {actor.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"{booking.id}/",
             sender=actor,
             notification_type="booking_cancelled",
         )
