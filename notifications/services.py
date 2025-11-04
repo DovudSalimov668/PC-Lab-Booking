@@ -1,19 +1,16 @@
-# bookings/services.py
-from django.core.mail import send_mail
-from django.conf import settings
-from django.template.loader import render_to_string
+# notifications/services.py
+from django.urls import reverse
 from django.utils import timezone
-from threading import Thread
 from users.models import User
 from .models import Notification
+from .utils import send_simple_email_async
+import logging
 
+logger = logging.getLogger(__name__)
 
 class NotificationService:
     """Handles creation and email delivery of notifications."""
 
-    # -----------------------------
-    # 1️⃣ Base notification creator
-    # -----------------------------
     @staticmethod
     def create_notification(
         recipient=None,
@@ -28,6 +25,8 @@ class NotificationService:
         """
         Create a notification record and optionally send an email.
         """
+        print(f"🔔 DEBUG: Creating notification: {title}")
+        
         notif = Notification.objects.create(
             recipient=recipient,
             sender=sender,
@@ -40,28 +39,27 @@ class NotificationService:
             is_read=False,
         )
 
-        # Email sending
+        # Email sending - USING BREVO
         if send_email:
             if recipient and recipient.email:
+                print(f"🔔 DEBUG: Sending Brevo email to: {recipient.email}")
                 NotificationService._send_email_async(
                     subject=f"[PC Lab Booking] {title}",
                     message=message,
-                    recipient_list=[recipient.email],
+                    recipient_email=recipient.email,
                 )
             elif target_role:
                 users = User.objects.filter(role=target_role, is_active=True)
                 for user in users:
                     if user.email:
+                        print(f"🔔 DEBUG: Sending Brevo email to {target_role}: {user.email}")
                         NotificationService._send_email_async(
                             subject=f"[PC Lab Booking] {title}",
                             message=message,
-                            recipient_list=[user.email],
+                            recipient_email=user.email,
                         )
         return notif
 
-    # -----------------------------
-    # 2️⃣ Specific notification types
-    # -----------------------------
     @staticmethod
     def notify_booking_created(booking):
         admins = User.objects.filter(role="program_admin", is_active=True)
@@ -73,7 +71,7 @@ class NotificationService:
                     f"{booking.requester.username} requested to book {booking.lab.name} "
                     f"on {booking.start.strftime('%Y-%m-%d %H:%M')}."
                 ),
-                link=f"/bookings/{booking.id}/",
+                link=f"/{booking.id}/",  # ✅ This matches your URL pattern
                 sender=booking.requester,
                 notification_type="booking_created",
             )
@@ -87,7 +85,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"has been approved by {approver.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ This matches your URL pattern
             sender=approver,
             notification_type="booking_approved",
         )
@@ -101,7 +99,7 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was rejected by {approver.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ This matches your URL pattern
             sender=approver,
             notification_type="booking_rejected",
         )
@@ -115,27 +113,20 @@ class NotificationService:
                 f"Your booking for {booking.lab.name} on {booking.start.strftime('%Y-%m-%d %H:%M')} "
                 f"was cancelled by {actor.username}."
             ),
-            link=f"/bookings/{booking.id}/",
+            link=f"/{booking.id}/",  # ✅ This matches your URL pattern
             sender=actor,
             notification_type="booking_cancelled",
         )
 
-    # -----------------------------
-    # 3️⃣ Async Email Helper
-    # -----------------------------
     @staticmethod
-    def _send_email_async(subject, message, recipient_list):
-        """Send email in a background thread (non-blocking)."""
-        def _send():
-            try:
-                send_mail(
-                    subject,
-                    message,
-                    getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@pclab.com"),
-                    recipient_list,
-                    fail_silently=False,
-                )
-            except Exception as e:
-                print("[NotificationService] Email send error:", e)
-
-        Thread(target=_send, daemon=True).start()
+    def _send_email_async(subject, message, recipient_email):
+        """Send email using Brevo"""
+        try:
+            send_simple_email_async(
+                subject=subject,
+                message=message,
+                recipient_email=recipient_email
+            )
+            logger.info(f"✅ Notification email queued for: {recipient_email}")
+        except Exception as e:
+            logger.error(f"❌ Notification email error: {e}")
